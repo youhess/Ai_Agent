@@ -1,0 +1,68 @@
+export const BUSINESS = {
+  appName: '社会治理智能分析平台',
+  appShortName: '治理分析',
+  organization: '城市运行与社会治理中心',
+  region: '示范区域',
+  nav: {
+    overview: '综合态势',
+    analysis: '专题分析',
+    cases: '事件中心',
+  },
+  dashboard: {
+    title: '社会治理综合态势',
+    description: '汇聚多源治理数据，实时掌握事件趋势、处置效能与重点领域风险。',
+    trendTitle: '近 14 天新增事件趋势',
+    trendSubtitle: '按事件上报日期统计每日新增量',
+    categoryTitle: '事件类型分布',
+    categorySubtitle: '按业务领域统计受理量',
+    casesTitle: '最新事件动态',
+    casesSubtitle: '滚动播报最近上报的 5 条事件',
+  },
+  metrics: {
+    total_cases: { label: '事件总数', unit: '件', icon: 'document' },
+    today_cases: { label: '今日新增', unit: '件', icon: 'check' },
+    pending_cases: { label: '待处理事件', unit: '件', icon: 'clock' },
+    high_risk_cases: { label: '高风险事件', unit: '件', icon: 'arrow-up' },
+    completion_rate: { label: '处理完成率', unit: '%', icon: 'rate' },
+  },
+  caseTable: {
+    columns: {
+      id: '事件编号',
+      title: '事件内容',
+      category: '事件类型',
+      area: '所属区域',
+      status: '处置状态',
+      time: '上报时间',
+    },
+    empty: '暂无事件数据',
+  },
+  statusLabels: {
+    pending: '待处置',
+    processing: '处置中',
+    resolved: '已办结',
+    closed: '已关闭',
+  } as Record<string, string>,
+  assistant: {
+    title: '社会治理分析助手',
+    welcomeTitle: '您好，我是治理分析助手',
+    welcomeText: '我可以协助分析事件趋势、定位重点风险、梳理处置情况，并提供可追溯的数据依据。',
+    inputPlaceholder: '请输入您想了解的治理问题…',
+    send: '发送',
+    stop: '停止生成',
+    thinking: '正在执行分析任务…',
+    traceTitle: '任务执行过程',
+    sourcesTitle: '数据来源',
+    suggestionsTitle: '您可以这样问',
+    suggestions: [
+      '最近7天滨江区事件有什么异常？',
+      '哪个类别的问题增长最快？',
+      '目前有哪些高风险事件？',
+      '根据治理规范，高风险事件应该如何处理？',
+      '分析最近一个月治理情况并提出建议。',
+    ],
+  },
+  categories: ['市容环境', '垃圾堆放', '道路设施', '噪声扰民', '占道经营', '停车问题', '公共设施损坏', '社区服务'],
+  footer: '数据仅用于辅助研判，具体处置以业务系统为准',
+} as const
+
+export type MetricKey = keyof typeof BUSINESS.metrics
