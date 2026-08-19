@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { getCases } from '../api'
 import { BUSINESS } from '../config/business'
 import type { GovernanceCase } from '../types'
+import AppIcon from '../components/AppIcon.vue'
 
 const loading = ref(true)
 const error = ref('')
@@ -42,10 +43,11 @@ onMounted(load)
 
 <template>
   <div class="dashboard-page feature-page">
-    <section class="page-heading">
-      <div>
+    <section class="page-heading feature-heading">
+      <span class="page-emblem"><AppIcon name="database" /></span>
+      <div class="page-title-copy">
         <h1>治理事件中心</h1>
-        <p class="heading-description">按区域、类别、状态和优先级查询 SQLite 中的真实 Demo 事件。</p>
+        <p class="heading-description">统一查询治理事件，掌握受理、处置与办结状态</p>
       </div>
       <span class="result-count">当前结果 <strong>{{ cases.length }}</strong> 件</span>
     </section>

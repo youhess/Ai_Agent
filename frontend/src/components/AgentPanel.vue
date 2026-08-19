@@ -71,7 +71,9 @@ async function send(text?: string) {
       const items = Array.isArray(event.data) ? event.data : [event.data]
       assistant.sources?.push(...items.map(normalizeSource))
     } else if (event.type === 'answer') {
-      assistant.content += answerText(event.data)
+      const shouldReset = Boolean(event.data && typeof event.data === 'object' && (event.data as Record<string, unknown>).reset)
+      if (shouldReset) assistant.content = answerText(event.data)
+      else assistant.content += answerText(event.data)
     } else if (event.type === 'error') {
       assistant.error = true
       assistant.content += `\n\n${answerText(event.data) || 'AI 分析服务返回异常，请稍后重试。'}`

@@ -10,11 +10,9 @@ export const BUSINESS = {
   },
   dashboard: {
     title: '社会治理综合态势',
-    description: '汇聚多源治理数据，实时掌握事件趋势、处置效能与重点领域风险。',
+    tagline: '全域感知 · 智能研判 · 精准处置 · 共建共治',
     trendTitle: '近 14 天新增事件趋势',
-    trendSubtitle: '按事件上报日期统计每日新增量',
     categoryTitle: '事件类型分布',
-    categorySubtitle: '按业务领域统计受理量',
     casesTitle: '最新事件动态',
     casesSubtitle: '滚动播报最近上报的 5 条事件',
   },
@@ -22,7 +20,7 @@ export const BUSINESS = {
     total_cases: { label: '事件总数', unit: '件', icon: 'document' },
     today_cases: { label: '今日新增', unit: '件', icon: 'check' },
     pending_cases: { label: '待处理事件', unit: '件', icon: 'clock' },
-    high_risk_cases: { label: '高风险事件', unit: '件', icon: 'arrow-up' },
+    high_risk_cases: { label: '高风险事件', unit: '件', icon: 'warning' },
     completion_rate: { label: '处理完成率', unit: '%', icon: 'rate' },
   },
   caseTable: {

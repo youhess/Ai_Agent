@@ -9,7 +9,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT))
 os.environ["DATABASE_PATH"] = "backend/data/test.db"
 os.environ["KNOWLEDGE_DIRECTORY"] = "knowledge"
-os.environ.pop("LLM_API_KEY", None)
+# Unit tests must never call the developer's configured external model.
+os.environ["LLM_API_KEY"] = ""
 
 
 @pytest.fixture(scope="session", autouse=True)

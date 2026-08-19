@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api import agent, cases, dashboard, knowledge
+from api import admin_agent, admin_data, admin_knowledge, agent, cases, dashboard, knowledge
 from business_config import BUSINESS_CONFIG
 from config import get_settings
 from database.init_db import init_database
@@ -32,6 +32,9 @@ app.include_router(dashboard.router)
 app.include_router(cases.router)
 app.include_router(knowledge.router)
 app.include_router(agent.router)
+app.include_router(admin_data.router)
+app.include_router(admin_knowledge.router)
+app.include_router(admin_agent.router)
 
 
 @app.get("/api/health")

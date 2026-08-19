@@ -15,7 +15,7 @@ const summary = ref<DashboardSummary>({ metrics: {}, trend: [], categories: [] }
 const cases = ref<GovernanceCase[]>([])
 
 const metricKeys = Object.keys(BUSINESS.metrics) as MetricKey[]
-const palette = ['#174c83', '#337c6c', '#c17a28', '#8a4b50', '#5d6f86', '#77715f']
+const palette = ['#0868e6', '#13a67c', '#ef8b16', '#e34b4b', '#7763d5', '#5977a5', '#1383a7', '#2fa77a']
 
 function metricValue(key: MetricKey): MetricValue {
   const value = summary.value.metrics?.[key]
@@ -25,6 +25,32 @@ function metricValue(key: MetricKey): MetricValue {
 function formatNumber(value: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 }).format(value)
 }
+
+function numericMetric(key: MetricKey) {
+  return metricValue(key).value
+}
+
+const peakTrend = computed(() => summary.value.trend.reduce(
+  (peak, item) => item.count > peak.count ? item : peak,
+  { date: '暂无', count: 0 },
+))
+
+const topCategory = computed(() => summary.value.categories[0])
+
+const aiInsights = computed(() => [
+  {
+    tone: 'risk', icon: 'warning', title: '高风险关注',
+    text: `当前有 ${numericMetric('high_risk_cases')} 件高风险事件，建议优先核验处置进度与责任单位。`,
+  },
+  {
+    tone: 'trend', icon: 'trend', title: '趋势洞察',
+    text: peakTrend.value.count ? `${peakTrend.value.date.slice(5)} 达到近 14 天峰值（${peakTrend.value.count} 件），建议关注当日集中上报原因。` : '当前暂无足够的趋势数据。',
+  },
+  {
+    tone: 'action', icon: 'action', title: '建议行动',
+    text: `待处理事件 ${numericMetric('pending_cases')} 件${topCategory.value ? `，可优先下钻“${topCategory.value.name}”类别` : ''}。`,
+  },
+])
 
 function normalizeCase(item: GovernanceCase & Record<string, unknown>): GovernanceCase {
   return {
@@ -48,23 +74,23 @@ async function loadData() {
 }
 
 const trendOption = computed<EChartsOption>(() => ({
-  color: ['#174c83', '#337c6c'],
-  tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#d9e0e7', textStyle: { color: '#27384a' } },
-  legend: { top: 4, right: 8, itemWidth: 18, itemHeight: 3, textStyle: { color: '#68788a' }, data: ['事件量'] },
-  grid: { left: 15, right: 15, top: 48, bottom: 12, containLabel: true },
-  xAxis: { type: 'category', boundaryGap: false, data: summary.value.trend.map((p) => p.date), axisLine: { lineStyle: { color: '#cfd7df' } }, axisTick: { show: false }, axisLabel: { color: '#7b8998' } },
-  yAxis: { type: 'value', splitLine: { lineStyle: { color: '#edf0f3', type: 'dashed' } }, axisLabel: { color: '#7b8998' } },
+  color: ['#0876ee'],
+  tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#cfe0f5', textStyle: { color: '#18375f' } },
+  legend: { top: 4, right: 14, itemWidth: 18, itemHeight: 3, textStyle: { color: '#617793' }, data: ['事件量'] },
+  grid: { left: 16, right: 18, top: 48, bottom: 15, containLabel: true },
+  xAxis: { type: 'category', boundaryGap: false, data: summary.value.trend.map((p) => p.date), axisLine: { lineStyle: { color: '#cddcf0' } }, axisTick: { show: false }, axisLabel: { color: '#70839c' } },
+  yAxis: { type: 'value', splitLine: { lineStyle: { color: '#dce8f6', type: 'dashed' } }, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#70839c' } },
   series: [
-    { name: '事件量', type: 'line', smooth: 0.25, symbol: 'circle', symbolSize: 6, data: summary.value.trend.map((p) => p.count), lineStyle: { width: 2.5 }, itemStyle: { borderWidth: 2, borderColor: '#fff' } },
+    { name: '事件量', type: 'line', smooth: 0.32, symbol: 'circle', symbolSize: 7, data: summary.value.trend.map((p) => p.count), lineStyle: { width: 3 }, itemStyle: { borderWidth: 2, borderColor: '#fff' }, areaStyle: { color: 'rgba(8, 118, 238, .12)' } },
   ],
 }))
 
 const categoryOption = computed<EChartsOption>(() => ({
   color: palette,
   tooltip: { trigger: 'item', formatter: '{b}<br/>{c} 件（{d}%）' },
-  legend: { orient: 'vertical', right: 8, top: 'center', itemWidth: 9, itemHeight: 9, itemGap: 14, textStyle: { color: '#5f6f80', fontSize: 12 } },
+  legend: { orient: 'vertical', right: 10, top: 'center', itemWidth: 9, itemHeight: 9, itemGap: 12, textStyle: { color: '#566d8a', fontSize: 11 } },
   series: [{
-    type: 'pie', radius: ['48%', '72%'], center: ['36%', '53%'], avoidLabelOverlap: true,
+    type: 'pie', radius: ['48%', '72%'], center: ['34%', '53%'], avoidLabelOverlap: true,
     itemStyle: { borderColor: '#fff', borderWidth: 3 }, label: { show: false },
     data: summary.value.categories,
   }],
@@ -89,10 +115,11 @@ onMounted(loadData)
 
 <template>
   <div class="dashboard-page">
-    <section class="page-heading">
-      <div>
+    <section class="page-heading overview-heading">
+      <span class="page-emblem"><AppIcon name="shield" /></span>
+      <div class="page-title-copy">
         <h1>{{ BUSINESS.dashboard.title }}</h1>
-        <p class="heading-description">{{ BUSINESS.dashboard.description }}</p>
+        <p class="heading-description">{{ BUSINESS.dashboard.tagline }}</p>
       </div>
     </section>
 
@@ -106,19 +133,31 @@ onMounted(loadData)
           <div class="metric-value"><strong>{{ loading ? '—' : formatNumber(metricValue(key).value) }}</strong><span>{{ BUSINESS.metrics[key].unit }}</span></div>
         </div>
         <span v-if="metricValue(key).change !== undefined" class="metric-change" :class="metricValue(key).trend">
-          <AppIcon name="arrow-up" /> {{ Math.abs(metricValue(key).change ?? 0) }}%
+          较昨日 <b>{{ (metricValue(key).change ?? 0) >= 0 ? '+' : '-' }}{{ Math.abs(metricValue(key).change ?? 0) }}%</b> <AppIcon name="arrow-up" />
         </span>
       </article>
     </section>
 
     <section class="charts-grid">
       <article class="panel trend-panel">
-        <header class="panel-header"><div><h2>{{ BUSINESS.dashboard.trendTitle }}</h2><p>{{ BUSINESS.dashboard.trendSubtitle }}</p></div></header>
+        <header class="panel-header"><div><h2>{{ BUSINESS.dashboard.trendTitle }}</h2></div></header>
         <EChart v-if="summary.trend.length" :option="trendOption" />
         <div v-else class="empty-chart">{{ loading ? '正在加载趋势数据…' : '暂无趋势数据' }}</div>
       </article>
+      <article class="panel ai-summary-panel">
+        <header class="panel-header ai-summary-header">
+          <div><h2><AppIcon name="bot" />AI 研判摘要</h2></div>
+          <span>实时</span>
+        </header>
+        <div class="ai-insight-list">
+          <div v-for="item in aiInsights" :key="item.title" class="ai-insight" :class="`tone-${item.tone}`">
+            <span class="ai-insight-icon"><AppIcon :name="item.icon" /></span>
+            <div><strong>{{ item.title }}</strong><p>{{ item.text }}</p></div>
+          </div>
+        </div>
+      </article>
       <article class="panel category-panel">
-        <header class="panel-header"><div><h2>{{ BUSINESS.dashboard.categoryTitle }}</h2><p>{{ BUSINESS.dashboard.categorySubtitle }}</p></div></header>
+        <header class="panel-header"><div><h2>{{ BUSINESS.dashboard.categoryTitle }}</h2></div></header>
         <EChart v-if="summary.categories.length" :option="categoryOption" />
         <div v-else class="empty-chart">{{ loading ? '正在加载分类数据…' : '暂无分类数据' }}</div>
       </article>
@@ -130,7 +169,7 @@ onMounted(loadData)
         <div
           class="broadcast-track"
           :class="{ scrolling: cases.length > 4 }"
-          :style="{ '--ticker-distance': `${-52 * cases.length}px`, '--ticker-duration': `${Math.max(cases.length * 4, 16)}s` }"
+          :style="{ '--ticker-distance': `${-42 * cases.length}px`, '--ticker-duration': `${Math.max(cases.length * 4, 16)}s` }"
         >
           <div v-for="item in cases" :key="item.id" class="broadcast-item">
             <time>{{ formatBroadcastTime(item.reportedAt) }}</time>

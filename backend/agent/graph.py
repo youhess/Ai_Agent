@@ -4,12 +4,12 @@ import json
 import logging
 from typing import Any, Literal
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
 from agent.model import get_chat_model
+from agent.planner import QueryPlan, plan_query
 from agent.prompts import SYSTEM_PROMPT
-from agent.router import parse_query, route_query
 from agent.state import AgentState
 from agent.tools.registry import TOOL_REGISTRY
 
@@ -20,43 +20,50 @@ def trace(step: str, title: str, summary: str, status: str = "completed") -> dic
     return {"step": step, "title": title, "status": status, "summary": summary}
 
 
-def parse_request(state: AgentState) -> dict:
-    entities = parse_query(state["user_query"])
-    labels = [str(value) for key, value in entities.items() if key != "parsed_at"]
+def _clean_filters(plan: QueryPlan) -> dict[str, Any]:
+    return {key: value for key, value in plan.filters.model_dump().items() if value not in (None, [])}
+
+
+def _filter_summary(plan: QueryPlan) -> str:
+    values = _clean_filters(plan)
+    labels = {
+        "district": "区域", "street": "街道/社区", "category": "类别", "statuses": "状态",
+        "level": "等级", "priority": "优先级", "days": "最近天数", "start_date": "开始", "end_date": "结束",
+    }
+    parts = []
+    for key, value in values.items():
+        shown = "、".join(value) if isinstance(value, list) else value
+        parts.append(f"{labels[key]}：{shown}")
+    return "；".join(parts) if parts else "全部 Demo 数据"
+
+
+async def parse_request(state: AgentState) -> dict:
+    plan = await plan_query(state["user_query"], state.get("history", []))
+    entities = _clean_filters(plan)
+    if plan.case_id:
+        entities["case_id"] = plan.case_id
+    if plan.group_by:
+        entities["group_by"] = plan.group_by
+    operation_labels = {
+        "chat": "一般交流", "list_cases": "查询事件明细", "case_detail": "查询事件详情",
+        "aggregate": "聚合统计", "compare_periods": "周期对比", "recurring_locations": "重复问题分析",
+        "knowledge": "检索治理资料", "comprehensive": "综合分析", "refuse": "安全边界处理",
+    }
     return {
+        "plan": plan.model_dump(),
+        "intent": plan.intent,
         "entities": entities,
-        "execution_trace": [trace("parse_request", "理解用户问题", " · ".join(labels) if labels else "已识别用户分析目标")],
+        "execution_trace": [trace("parse_request", "理解用户问题", f"{operation_labels[plan.operation]} · {_filter_summary(plan)}")],
     }
 
 
-def route_intent(state: AgentState) -> dict:
-    intent = route_query(state["user_query"])
-    labels = {"general_chat": "一般咨询", "knowledge_query": "知识查询", "data_query": "数据查询", "analysis_query": "综合分析"}
-    return {"intent": intent, "execution_trace": [trace("route_intent", "规划执行路径", labels[intent])]}
-
-
-def choose_route(state: AgentState) -> Literal["general", "knowledge", "data", "comprehensive"]:
-    return {"general_chat": "general", "knowledge_query": "knowledge", "data_query": "data", "analysis_query": "comprehensive"}[state["intent"]]
-
-
-def data_query(state: AgentState) -> dict:
-    filters = {key: value for key, value in state.get("entities", {}).items() if key in {"district", "category", "status", "priority", "days"}}
-    cases = TOOL_REGISTRY["query_cases"].invoke({**filters, "limit": 1000})
-    statistics = TOOL_REGISTRY["get_case_statistics"].invoke(filters)
-    days = int(filters.get("days", 7))
-    trend_filters = {key: value for key, value in filters.items() if key in {"district", "category"}}
-    trend = TOOL_REGISTRY["analyse_case_trend"].invoke({**trend_filters, "days": days})
-    risks = TOOL_REGISTRY["get_high_risk_cases"].invoke({"district": filters.get("district"), "days": filters.get("days"), "limit": 20})
-    return {
-        "cases": cases,
-        "tool_results": [
-            {"tool": "query_cases", "result": {"count": len(cases)}},
-            {"tool": "get_case_statistics", "result": statistics},
-            {"tool": "analyse_case_trend", "result": trend},
-            {"tool": "get_high_risk_cases", "result": {"count": len(risks), "cases": risks}},
-        ],
-        "execution_trace": [trace("data_query", "查询并统计治理事件", f"找到 {len(cases)} 条记录，识别 {len(risks)} 条未完成高风险事件")],
-    }
+def choose_route(state: AgentState) -> Literal["respond", "knowledge", "tools"]:
+    operation = state["plan"]["operation"]
+    if operation in {"chat", "refuse"}:
+        return "respond"
+    if operation == "knowledge":
+        return "knowledge"
+    return "tools"
 
 
 def knowledge_query(state: AgentState) -> dict:
@@ -69,119 +76,356 @@ def knowledge_query(state: AgentState) -> dict:
     }
 
 
-def comprehensive_query(state: AgentState) -> dict:
-    data = data_query(state)
-    knowledge = knowledge_query(state)
-    return {
-        "cases": data["cases"],
-        "tool_results": data["tool_results"] + knowledge["tool_results"],
-        "retrieved_context": knowledge["retrieved_context"],
-        "execution_trace": data["execution_trace"] + knowledge["execution_trace"],
-    }
+def _run_comprehensive(state: AgentState, plan: QueryPlan, filters: dict[str, Any]) -> dict:
+    ranked_followup = bool(plan.group_by and "最多" in state["user_query"])
+    base_filters = dict(filters)
+    if ranked_followup:
+        base_filters.pop("statuses", None)
+    rows = TOOL_REGISTRY["query_cases"].invoke({**base_filters, "limit": 1000})
+    statistics = TOOL_REGISTRY["get_case_statistics"].invoke(base_filters)
+    results: list[dict[str, Any]] = [
+        {"tool": "query_cases", "result": {"count": len(rows)}},
+        {"tool": "get_case_statistics", "result": statistics},
+    ]
+    traces = [
+        trace("query_cases", "查询治理事件", f"找到 {len(rows)} 条记录"),
+        trace("get_case_statistics", "计算事件指标", f"完成 {len(rows)} 条记录的分布统计"),
+    ]
+    if plan.filters.start_date and plan.filters.end_date and plan.comparison_start_date and plan.comparison_end_date:
+        compare_args = {key: value for key, value in base_filters.items() if key not in {"days", "start_date", "end_date"}}
+        compare_args.update({
+            "current_start_date": plan.filters.start_date,
+            "current_end_date": plan.filters.end_date,
+            "previous_start_date": plan.comparison_start_date,
+            "previous_end_date": plan.comparison_end_date,
+            "group_by": plan.group_by or "category",
+        })
+        comparison = TOOL_REGISTRY["compare_case_periods"].invoke(compare_args)
+        results.append({"tool": "compare_case_periods", "result": comparison})
+        traces.append(trace("compare_case_periods", "对比当前与上一周期", f"数量变化 {comparison['delta']:+d} 条"))
+    else:
+        trend_args = {key: value for key, value in base_filters.items() if key in {"district", "category", "days"}}
+        trend = TOOL_REGISTRY["analyse_case_trend"].invoke({**trend_args, "days": int(trend_args.get("days", 7))})
+        results.append({"tool": "analyse_case_trend", "result": trend})
+        traces.append(trace("analyse_case_trend", "分析事件变化趋势", f"当前周期 {trend['current_count']} 条"))
+    high_risk_count = sum(1 for row in rows if row["priority"] == "高" and row["status"] != "已完成")
+    results.append({"tool": "high_risk_from_query", "result": {"count": high_risk_count}})
+    if plan.group_by:
+        aggregation = TOOL_REGISTRY["aggregate_cases"].invoke({**base_filters, "group_by": plan.group_by})
+        results.append({"tool": "aggregate_cases", "result": aggregation})
+        traces.append(trace("aggregate_cases", "执行分组统计", f"形成 {len(aggregation['groups'])} 个分组"))
+        if ranked_followup and aggregation["groups"]:
+            top_group = aggregation["groups"][0]["name"]
+            followup_filters = dict(base_filters)
+            followup_filters[plan.group_by] = top_group
+            if plan.filters.statuses:
+                followup_filters["statuses"] = plan.filters.statuses
+            followup_rows = TOOL_REGISTRY["query_cases"].invoke({**followup_filters, "limit": plan.limit})
+            results.append({"tool": "query_ranked_group_cases", "result": {"group": top_group, "count": len(followup_rows), "cases": followup_rows}})
+            traces.append(trace("query_ranked_group_cases", "查询重点分组事件", f"{top_group} 返回 {len(followup_rows)} 条记录"))
+    sources: list[dict[str, Any]] = []
+    if plan.needs_knowledge:
+        sources = TOOL_REGISTRY["search_knowledge_base"].invoke({"query": state["user_query"], "limit": 4})
+        results.append({"tool": "search_knowledge_base", "result": {"count": len(sources)}})
+        traces.append(trace("search_knowledge_base", "检索治理知识库", f"找到 {len(sources)} 条模拟资料"))
+    return {"cases": rows, "tool_results": results, "retrieved_context": sources, "execution_trace": traces}
+
+
+def execute_plan(state: AgentState) -> dict:
+    plan = QueryPlan.model_validate(state["plan"])
+    filters = _clean_filters(plan)
+    operation = plan.operation
+    if operation == "case_detail":
+        detail = TOOL_REGISTRY["get_case_detail"].invoke({"case_id": plan.case_id})
+        found = "error" not in detail
+        return {
+            "cases": [detail] if found else [],
+            "tool_results": [{"tool": "get_case_detail", "result": detail}],
+            "execution_trace": [trace("get_case_detail", "查询事件详情", "已找到事件" if found else "未找到指定事件")],
+        }
+    if operation == "list_cases":
+        rows = TOOL_REGISTRY["query_cases"].invoke({**filters, "limit": plan.limit})
+        return {
+            "cases": rows,
+            "tool_results": [{"tool": "query_cases", "result": {"count": len(rows)}}],
+            "execution_trace": [trace("query_cases", "查询事件明细", f"返回 {len(rows)} 条记录")],
+        }
+    if operation == "aggregate":
+        result = TOOL_REGISTRY["aggregate_cases"].invoke({**filters, "group_by": plan.group_by or "category"})
+        return {
+            "tool_results": [{"tool": "aggregate_cases", "result": result}],
+            "execution_trace": [trace("aggregate_cases", "聚合治理事件", f"共 {result['total']} 条，形成 {len(result['groups'])} 个分组")],
+        }
+    if operation == "compare_periods":
+        compare_filters = {key: value for key, value in filters.items() if key not in {"days", "start_date", "end_date"}}
+        result = TOOL_REGISTRY["compare_case_periods"].invoke({
+            **compare_filters,
+            "current_start_date": plan.filters.start_date,
+            "current_end_date": plan.filters.end_date,
+            "previous_start_date": plan.comparison_start_date,
+            "previous_end_date": plan.comparison_end_date,
+            "days": plan.filters.days or 7,
+            "group_by": plan.group_by or "category",
+        })
+        updates: dict[str, Any] = {
+            "tool_results": [{"tool": "compare_case_periods", "result": result}],
+            "execution_trace": [trace("compare_case_periods", "比较两个时间周期", f"数量变化 {result['delta']:+d} 条")],
+        }
+        if plan.needs_knowledge and result["delta"] > 0:
+            sources = TOOL_REGISTRY["search_knowledge_base"].invoke({"query": state["user_query"], "limit": 4})
+            updates["retrieved_context"] = sources
+            updates["tool_results"].append({"tool": "search_knowledge_base", "result": {"count": len(sources)}})
+            updates["execution_trace"].append(trace("search_knowledge_base", "检索治理知识库", f"找到 {len(sources)} 条模拟资料"))
+        return updates
+    if operation == "recurring_locations":
+        result = TOOL_REGISTRY["find_recurring_locations"].invoke({
+            "district": plan.filters.district,
+            "category": plan.filters.category,
+            "days": plan.filters.days or 7,
+            "minimum_count": 3,
+        })
+        updates: dict[str, Any] = {
+            "tool_results": [{"tool": "find_recurring_locations", "result": result}],
+            "execution_trace": [trace("find_recurring_locations", "识别重复发生问题", f"找到 {len(result['hotspots'])} 个街道级热点")],
+        }
+        if plan.needs_knowledge:
+            sources = TOOL_REGISTRY["search_knowledge_base"].invoke({"query": state["user_query"], "limit": 4})
+            updates["retrieved_context"] = sources
+            updates["tool_results"].append({"tool": "search_knowledge_base", "result": {"count": len(sources)}})
+            updates["execution_trace"].append(trace("search_knowledge_base", "检索治理知识库", f"找到 {len(sources)} 条模拟资料"))
+        return updates
+    return _run_comprehensive(state, plan, filters)
 
 
 def analyse(state: AgentState) -> dict:
+    plan = QueryPlan.model_validate(state["plan"])
     results = {item["tool"]: item["result"] for item in state.get("tool_results", [])}
     statistics = results.get("get_case_statistics", {})
-    trend = results.get("analyse_case_trend", {})
+    trend = results.get("analyse_case_trend", results.get("compare_case_periods", {}))
+    category_distribution = statistics.get("category_distribution", {})
     analysis = {
+        "operation": plan.operation,
         "statistics": statistics,
         "trend": trend,
-        "high_risk_count": results.get("get_high_risk_cases", {}).get("count", 0),
-        "top_category": max(statistics.get("category_distribution", {}), key=statistics.get("category_distribution", {}).get, default=None),
+        "high_risk_count": results.get("high_risk_from_query", {}).get("count", 0),
+        "top_category": max(category_distribution, key=category_distribution.get, default=None),
         "anomalies": trend.get("anomalies", []),
     }
-    anomaly_text = f"识别 {len(analysis['anomalies'])} 项显著类别变化" if analysis["anomalies"] else "未发现达到规则阈值的类别突增"
-    return {"analysis_result": analysis, "execution_trace": [trace("analyse", "执行趋势与异常分析", anomaly_text)]}
+    return {"analysis_result": analysis, "execution_trace": [trace("analyse", "整理查询证据", "已形成可追溯的回答依据")]}
+
+
+def _format_case_table(rows: list[dict[str, Any]], limit: int = 10) -> str:
+    lines = ["| 事件编号 | 时间 | 区域 | 类别 | 等级 | 状态 |", "| --- | --- | --- | --- | --- | --- |"]
+    for row in rows[:limit]:
+        area = f"{row.get('district', '-')}·{row.get('street', '-')}"
+        lines.append(f"| {row.get('id', '-')} | {str(row.get('created_at', '-'))[:16].replace('T', ' ')} | {area} | {row.get('category', '-')} | {row.get('level', row.get('priority', '-'))} | {row.get('status', '-')} |")
+    return "\n".join(lines)
+
+
+def _knowledge_fallback(sources: list[dict[str, Any]]) -> str:
+    if not sources:
+        return "当前知识库未检索到足以支持回答的资料，请补充相关 Demo 文档或调整问题。"
+    excerpts = "\n".join(f"- **《{item['document_name'].rsplit('.', 1)[0]}》**：{item['chunk'][:220]}..." for item in sources[:3])
+    return f"## 处置参考\n\n{excerpts}\n\n> 以上内容来自虚构竞赛 Demo 文档，不是真实法律、政策或现实处置指令。"
 
 
 def _fallback_answer(state: AgentState) -> str:
-    if state.get("intent") == "general_chat":
-        return "我是社会治理分析助手，可以查询事件数据、分析趋势并检索 Demo 治理资料。请说明区域、时间范围或关注的问题类别。"
+    plan = QueryPlan.model_validate(state["plan"])
+    query = state["user_query"].strip()
+    if plan.operation == "refuse":
+        return f"我不能按这个要求操作：{plan.safety_reason or '该请求超出了安全与业务权限边界'}。我可以改为提供脱敏汇总、模拟流程说明或建议联系有权限的专业人员。"
+    if plan.operation == "chat":
+        if any(word in query for word in ["谢谢", "感谢", "辛苦了"]):
+            return "不客气。你可以继续问我事件数据、变化趋势或治理处置规范。"
+        if any(word in query.lower() for word in ["你好", "您好", "hi", "hello", "在吗"]):
+            return "你好！我是社会治理分析助手。你可以直接问我某个区域的事件情况、近期趋势，或者具体事件的处置建议。"
+        return "我可以帮你查询治理事件、分析趋势和检索 Demo 治理资料。你想先看哪个区域、时间范围或问题类别？"
+    sources = state.get("retrieved_context", [])
+    if plan.operation == "knowledge":
+        return _knowledge_fallback(sources)
+    results = {item["tool"]: item["result"] for item in state.get("tool_results", [])}
+    if plan.operation == "case_detail":
+        detail = results.get("get_case_detail", {})
+        if "error" in detail:
+            return f"当前 Demo 数据中未找到事件 **{plan.case_id}**。请核对事件编号后重试。"
+        resolved = detail.get("resolved_at") or "尚未办结"
+        timeline = "\n".join(
+            f"- {item['occurred_at']} · {item['action']}（{item['operator_role']}）：{item['note']}"
+            for item in detail.get("timeline", [])
+        ) or "- 当前没有处置节点记录"
+        return f"""事件 **{detail['id']}** 当前状态为 **{detail['status']}**，优先级为 **{detail['priority']}**。
+
+- 区域：{detail['district']} · {detail['street']}
+- 类别：{detail['category']}
+- 上报时间：{detail['created_at']}
+- 事件描述：{detail['description']}
+- 事件等级：{detail.get('level', '-')}
+- 责任单位：{detail.get('responsible_unit', '-')}
+- 证据状态：{'完整' if detail.get('evidence_complete') else '待补充'}
+- 办结时间：{resolved}
+- 来源：{detail['source']}
+
+### 处置轨迹
+
+{timeline}"""
+    if plan.operation == "list_cases":
+        rows = state.get("cases", [])
+        if not rows:
+            return f"当前 Demo 数据中未检索到符合条件的事件。查询范围：{_filter_summary(plan)}。"
+        return f"共找到 **{len(rows)}** 条事件，按上报时间倒序展示：\n\n{_format_case_table(rows)}"
+    if plan.operation == "aggregate":
+        result = results.get("aggregate_cases", {})
+        if not result.get("total"):
+            return f"当前 Demo 数据中没有符合条件的事件。查询范围：{_filter_summary(plan)}。"
+        lines = "\n".join(f"- {item['name']}：{item['count']} 条（{item['percentage']}%）" for item in result.get("groups", []))
+        return f"筛选范围内共 **{result['total']}** 条事件。\n\n{lines}"
+    if plan.operation == "compare_periods":
+        result = results.get("compare_case_periods", {})
+        if result.get("current_count", 0) == 0 and result.get("previous_count", 0) == 0:
+            return f"当前 Demo 数据在两个对比周期内都没有符合条件的事件。查询范围：{_filter_summary(plan)}。因此无法验证数量差异，也不会推断原因。"
+        growth = result.get("growth_rate")
+        growth_text = "上一周期为 0，无法计算变化率" if growth is None else f"变化率为 {growth:+.1f}%"
+        if "办结" in query:
+            group_lines = "\n".join(
+                f"- {item['name']}：本期 {item['current_completed']}/{item['current']} 条办结（{item['current_completion_rate'] if item['current_completion_rate'] is not None else '-'}%），"
+                f"上期 {item['previous_completed']}/{item['previous']} 条办结（{item['previous_completion_rate'] if item['previous_completion_rate'] is not None else '-'}%）"
+                for item in result.get("groups", [])[:10]
+            )
+        else:
+            group_lines = "\n".join(f"- {item['name']}：本期 {item['current']} 条，上期 {item['previous']} 条，变化 {item['delta']:+d}" for item in result.get("groups", [])[:10])
+        answer = f"本期 **{result.get('current_count', 0)}** 条，上期 **{result.get('previous_count', 0)}** 条，净变化 **{result.get('delta', 0):+d}** 条；{growth_text}。"
+        if group_lines:
+            answer += f"\n\n{group_lines}"
+        if sources:
+            answer += "\n\n" + _knowledge_fallback(sources)
+        return answer
+    if plan.operation == "recurring_locations":
+        result = results.get("find_recurring_locations", {})
+        hotspots = result.get("hotspots", [])
+        if not hotspots:
+            return f"最近 {result.get('days', plan.filters.days or 7)} 天没有街道与同类别组合达到 {result.get('minimum_count', 3)} 次。当前数据仅精确到街道，不能进一步判断具体点位。"
+        lines = "\n".join(f"- {item['street']} · {item['category']}：{item['count']} 次，最新事件 {item['latest_case']['id']}" for item in hotspots[:10])
+        answer = f"按当前数据可用的街道粒度，共识别 **{len(hotspots)}** 个重复问题热点：\n\n{lines}"
+        if sources:
+            answer += "\n\n" + _knowledge_fallback(sources)
+        return answer
+    ranked_result = results.get("query_ranked_group_cases")
+    if ranked_result:
+        aggregation = results.get("aggregate_cases", {})
+        top = aggregation.get("groups", [{}])[0]
+        rows = ranked_result.get("cases", [])
+        answer = f"事件最多的{('街道' if plan.group_by == 'street' else '分组')}是 **{ranked_result['group']}**，共 **{top.get('count', 0)}** 条。"
+        if rows:
+            answer += f"以下是该分组符合后续条件的前 {len(rows)} 条事件：\n\n{_format_case_table(rows, plan.limit)}"
+        else:
+            answer += "该分组当前没有符合后续条件的事件。"
+        if sources:
+            answer += "\n\n" + _knowledge_fallback(sources)
+        return answer
     analysis = state.get("analysis_result", {})
     stats = analysis.get("statistics", {})
     trend = analysis.get("trend", {})
-    sources = state.get("retrieved_context", [])
-    if state.get("intent") == "knowledge_query":
-        if not sources:
-            return "## 核心结论\n\n当前知识库未检索到足以支持回答的资料，请先执行知识库初始化或补充相关文档。"
-        excerpts = "\n".join(f"- **《{item['document_name'].rsplit('.', 1)[0]}》**：{item['chunk'][:220]}..." for item in sources[:3])
-        names = "\n".join(f"- 《{item['document_name'].rsplit('.', 1)[0]}》" for item in sources)
-        return f"## 处置参考\n\n{excerpts}\n\n> 以上内容来自模拟竞赛 Demo 文档，不是真实法律或政府政策。\n\n## 信息来源\n\n{names}"
     total = stats.get("total", len(state.get("cases", [])))
+    if total == 0:
+        return f"当前 Demo 数据中未检索到符合条件的事件。查询范围：{_filter_summary(plan)}。由于没有事实数据，我不会继续推断增长原因或生成数据结论。"
     growth = trend.get("growth_rate")
-    growth_text = "缺少上一周期数据，暂无法计算" if growth is None else f"较上一周期{'增长' if growth >= 0 else '下降'} {abs(growth):.1f}%"
+    growth_text = "缺少可比数据，暂无法计算变化率" if growth is None else f"较上一周期{'增长' if growth >= 0 else '下降'} {abs(growth):.1f}%"
     top_category = analysis.get("top_category") or "暂无"
-    anomalies = analysis.get("anomalies", [])
-    anomaly_text = "\n".join(f"- {item['category']}：本期 {item['current_count']} 条，增长 {item['growth_rate']}%" for item in anomalies) or "- 当前没有类别达到“增长至少 40% 且本期不少于 3 条”的异常规则。"
-    source_names = sorted({item["document_name"].rsplit(".", 1)[0] for item in sources})
-    source_text = "\n".join(["- 治理事件数据库"] + [f"- 《{name}》（模拟 Demo 文档）" for name in source_names])
-    return f"""## 核心结论
+    category_growth = trend.get("category_growth", {})
+    comparable_growth = {name: value for name, value in category_growth.items() if value is not None}
+    fastest_category = max(comparable_growth, key=comparable_growth.get, default=None)
+    fastest_text = f"增长最快的类别是 **{fastest_category}**（{comparable_growth[fastest_category]:+.1f}%）。" if fastest_category else "当前缺少可比较的类别增长率。"
+    priority_distribution = stats.get("priority_distribution", {})
+    priority_text = "、".join(f"{name}优先级 {count} 条" for name, count in priority_distribution.items()) or "暂无"
+    answer = f"""## 核心结论
 
-筛选范围内共 {total} 条治理事件，主要类别为 **{top_category}**；{growth_text}。当前有 {analysis.get('high_risk_count', 0)} 条未完成高风险事件。
+筛选范围内共 **{total}** 条治理事件，主要类别为 **{top_category}**；{growth_text}。其中有 **{analysis.get('high_risk_count', 0)}** 条未完成高优先级事件。
 
 ## 数据依据
 
+- 查询范围：{_filter_summary(plan)}
 - 事件总数：{total}
-- 当前周期：{trend.get('current_count', total)} 条
-- 上一周期：{trend.get('previous_count', 0)} 条
+- 风险分布：{priority_text}
 - 平均处理时长：{stats.get('average_resolution_hours') if stats.get('average_resolution_hours') is not None else '暂无可计算数据'} 小时
 
-## 异常发现
+{fastest_text}
 
-{anomaly_text}
+## 建议
 
-## 建议措施
+1. 优先复核未完成高优先级事件，明确责任人与处置时限。
+2. 对数量较多或增长较快的类别继续按街道和时段下钻。
+3. 原因属于待验证判断，需结合现场记录后再形成结论。"""
+    if "证据" in query:
+        incomplete = [row for row in state.get("cases", []) if not row.get("evidence_complete")]
+        if incomplete:
+            answer += f"\n\n## 待复核证据\n\n共有 **{len(incomplete)}** 条事件的结果证据尚不完整：\n\n{_format_case_table(incomplete, 10)}"
+        else:
+            answer += "\n\n当前筛选范围内没有标记为证据待补充的事件。"
+    if sources:
+        answer += "\n\n" + _knowledge_fallback(sources)
+    answer += "\n\n## 信息来源\n\n- 治理事件数据库"
+    return answer
 
-1. 优先复核未完成高风险事件，明确责任人与处置时限。
-2. 对增长较快类别按街道和发生时段进一步下钻，安排针对性巡查。
-3. 依据检索到的 Demo 处置规范执行分级、留痕和闭环复核；如无资料支持，应由业务人员补充规则后再决策。
 
-## 信息来源
-
-{source_text}"""
+def _content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content)
+    return str(content)
 
 
 async def generate_response(state: AgentState) -> dict:
     fallback = _fallback_answer(state)
-    model = get_chat_model()
     answer = fallback
-    if model is not None and state.get("intent") != "general_chat":
-        evidence = {
-            "question": state["user_query"],
-            "analysis": state.get("analysis_result", {}),
-            "knowledge": state.get("retrieved_context", []),
-            "deterministic_draft": fallback,
-        }
-        try:
-            response = await model.ainvoke([
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content="请仅根据以下工具证据整理最终回答，不新增数字或规则：\n" + json.dumps(evidence, ensure_ascii=False, default=str)),
-            ])
-            answer = str(response.content)
-        except Exception as exc:
-            logger.warning("LLM unavailable, returning grounded fallback: %s", exc)
-    return {"final_answer": answer, "execution_trace": [trace("generate_response", "生成治理分析", "已根据可验证数据与资料形成回答")]}
+    response_reset = False
+    try:
+        model = get_chat_model()
+        if model is not None:
+            history = [
+                AIMessage(content=item["content"]) if item["role"] == "assistant" else HumanMessage(content=item["content"])
+                for item in state.get("history", [])[-12:]
+            ]
+            plan = QueryPlan.model_validate(state["plan"])
+            if plan.operation == "refuse":
+                return {"final_answer": fallback, "execution_trace": [trace("generate_response", "生成回答", "已按安全边界返回替代建议")]}
+            if plan.operation == "chat":
+                messages = [SystemMessage(content=SYSTEM_PROMPT), *history, HumanMessage(content=state["user_query"])]
+            else:
+                evidence = {
+                    "question": state["user_query"], "plan": state["plan"],
+                    "tool_results": state.get("tool_results", []), "cases": state.get("cases", [])[:50],
+                    "knowledge": state.get("retrieved_context", []), "deterministic_draft": fallback,
+                }
+                messages = [
+                    SystemMessage(content=SYSTEM_PROMPT), *history,
+                    HumanMessage(content="请根据工具证据和确定性草稿直接回答本轮问题。不得新增证据中没有的数字、事件、规则或因果关系：\n" + json.dumps(evidence, ensure_ascii=False, default=str)),
+                ]
+            response = await model.ainvoke(messages)
+            answer = _content_text(response.content).strip() or fallback
+    except Exception as exc:
+        logger.warning("LLM unavailable, returning grounded fallback: %s", exc)
+        response_reset = True
+    return {
+        "final_answer": answer,
+        "response_reset": response_reset,
+        "execution_trace": [trace("generate_response", "生成回答", "已根据可验证数据与资料形成回答")],
+    }
 
 
 def build_graph():
     graph = StateGraph(AgentState)
     graph.add_node("parse_request", parse_request)
-    graph.add_node("route_intent", route_intent)
-    graph.add_node("data_query", data_query)
     graph.add_node("knowledge_query", knowledge_query)
-    graph.add_node("comprehensive_query", comprehensive_query)
+    graph.add_node("execute_plan", execute_plan)
     graph.add_node("analyse", analyse)
     graph.add_node("generate_response", generate_response)
     graph.add_edge(START, "parse_request")
-    graph.add_edge("parse_request", "route_intent")
-    graph.add_conditional_edges("route_intent", choose_route, {
-        "general": "generate_response", "knowledge": "knowledge_query",
-        "data": "data_query", "comprehensive": "comprehensive_query",
+    graph.add_conditional_edges("parse_request", choose_route, {
+        "respond": "generate_response", "knowledge": "knowledge_query", "tools": "execute_plan",
     })
     graph.add_edge("knowledge_query", "analyse")
-    graph.add_edge("data_query", "analyse")
-    graph.add_edge("comprehensive_query", "analyse")
+    graph.add_edge("execute_plan", "analyse")
     graph.add_edge("analyse", "generate_response")
     graph.add_edge("generate_response", END)
     return graph.compile()

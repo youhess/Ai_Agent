@@ -6,10 +6,15 @@ from database.repository import get_case, query_cases as repository_query_cases
 
 
 @tool
-def query_cases(district: str | None = None, category: str | None = None, status: str | None = None,
-                priority: str | None = None, days: int | None = None, limit: int = 200) -> list[dict[str, Any]]:
-    """按区域、类别、状态、优先级和最近天数查询治理事件。"""
-    return repository_query_cases(district=district, category=category, status=status, priority=priority, days=days, limit=limit)
+def query_cases(district: str | None = None, street: str | None = None, category: str | None = None,
+                statuses: list[str] | None = None, level: str | None = None,
+                priority: str | None = None, days: int | None = None,
+                start_date: str | None = None, end_date: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    """按区域、街道、类别、状态、优先级和时间范围查询治理事件。"""
+    return repository_query_cases(
+        district=district, street=street, category=category, statuses=statuses, level=level, priority=priority,
+        days=days, start_date=start_date, end_date=end_date, limit=limit,
+    )
 
 
 @tool

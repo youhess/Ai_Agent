@@ -30,6 +30,11 @@ DESCRIPTIONS = {
     "公共设施损坏": "公共照明及配套设施损坏需要检修",
     "社区服务": "居民提出社区便民服务协调需求",
 }
+RESPONSIBLE_UNITS = {
+    "市容环境": "市容管理模拟组", "垃圾堆放": "环卫处置模拟组", "道路设施": "道路养护模拟组",
+    "噪声扰民": "综合协调模拟组", "占道经营": "市容管理模拟组", "停车问题": "交通协调模拟组",
+    "公共设施损坏": "设施维护模拟组", "社区服务": "社区服务模拟组",
+}
 
 
 def generate(count: int = 240, seed: int = 2026) -> list[dict]:
@@ -60,13 +65,49 @@ def generate(count: int = 240, seed: int = 2026) -> list[dict]:
             base_hours = random.randint(8, 55)
             if category == "道路设施":
                 base_hours += random.randint(35, 80)  # Designed slower-resolution category.
-            resolved = (created + timedelta(hours=base_hours)).isoformat(timespec="seconds")
+            resolved_at = min(created + timedelta(hours=base_hours), now)
+            resolved = resolved_at.isoformat(timespec="seconds")
+        evidence_complete = status == "已完成" and random.random() < 0.88
+        if status == "处理中":
+            evidence_complete = random.random() < 0.3
+        timeline = [{
+            "action": "受理登记", "operator_role": "受理员",
+            "occurred_at": created.isoformat(timespec="seconds"), "note": "完成事件登记与基础信息核验",
+        }]
+        if status in {"处理中", "已完成"}:
+            assigned_at = min(created + timedelta(minutes=20), now)
+            timeline.append({
+                "action": "派单签收", "operator_role": "分派员",
+                "occurred_at": assigned_at.isoformat(timespec="seconds"), "note": f"已分派至{RESPONSIBLE_UNITS[category]}",
+            })
+        if status == "处理中":
+            handling_at = min(created + timedelta(hours=2), now)
+            timeline.append({
+                "action": "现场处置", "operator_role": "处置员",
+                "occurred_at": handling_at.isoformat(timespec="seconds"), "note": "正在核实并记录处置结果",
+            })
+        if status == "已完成" and resolved:
+            resolved_at = datetime.fromisoformat(resolved)
+            timeline.extend([
+                {
+                    "action": "现场处置", "operator_role": "处置员",
+                    "occurred_at": max(created, resolved_at - timedelta(minutes=30)).isoformat(timespec="seconds"),
+                    "note": "完成模拟处置并提交结果材料",
+                },
+                {
+                    "action": "复核办结", "operator_role": "复核员",
+                    "occurred_at": resolved, "note": "复核处置结果并完成归档",
+                },
+            ])
         rows.append({
             "id": f"SG-{now:%Y%m}-{index + 1:04d}", "category": category,
             "district": district, "street": street,
-            "description": DESCRIPTIONS[category], "priority": priority,
+            "description": DESCRIPTIONS[category],
+            "level": {"高": "一级", "中": "二级", "低": "三级"}[priority], "priority": priority,
             "status": status, "created_at": created.isoformat(timespec="seconds"),
+            "responsible_unit": RESPONSIBLE_UNITS[category], "evidence_complete": int(evidence_complete),
             "resolved_at": resolved, "source": random.choice(["12345热线", "网格巡查", "居民上报", "物联感知"]),
+            "timeline": timeline,
         })
     # Stabilize the headline signal across environments and execution times.
     current_binjiang = [row for row in rows if row["district"] == "滨江区" and datetime.fromisoformat(row["created_at"]) >= now - timedelta(days=7)]
@@ -74,9 +115,17 @@ def generate(count: int = 240, seed: int = 2026) -> list[dict]:
     for row in current_binjiang[:8]:
         row["category"] = "噪声扰民"
         row["description"] = DESCRIPTIONS["噪声扰民"]
+        row["responsible_unit"] = RESPONSIBLE_UNITS["噪声扰民"]
+        for action in row["timeline"]:
+            if action["action"] == "派单签收":
+                action["note"] = f"已分派至{RESPONSIBLE_UNITS['噪声扰民']}"
     for row in previous_binjiang[:3]:
         row["category"] = "噪声扰民"
         row["description"] = DESCRIPTIONS["噪声扰民"]
+        row["responsible_unit"] = RESPONSIBLE_UNITS["噪声扰民"]
+        for action in row["timeline"]:
+            if action["action"] == "派单签收":
+                action["note"] = f"已分派至{RESPONSIBLE_UNITS['噪声扰民']}"
     return rows
 
 

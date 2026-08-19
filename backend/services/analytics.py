@@ -7,6 +7,17 @@ def _distribution(cases: list[dict[str, Any]], field: str) -> dict[str, int]:
     return dict(Counter(str(case[field]) for case in cases))
 
 
+def group_cases(cases: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
+    if field not in {"district", "street", "category", "status", "level", "priority", "date"}:
+        raise ValueError("不支持的聚合维度")
+    values = Counter(case["created_at"][:10] if field == "date" else str(case[field]) for case in cases)
+    total = len(cases)
+    return [
+        {"name": name, "count": count, "percentage": round(count / total * 100, 1) if total else 0.0}
+        for name, count in sorted(values.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+
 def calculate_statistics(cases: list[dict[str, Any]]) -> dict[str, Any]:
     resolution_hours = []
     for case in cases:
@@ -19,6 +30,7 @@ def calculate_statistics(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "category_distribution": _distribution(cases, "category"),
         "district_distribution": _distribution(cases, "district"),
         "status_distribution": _distribution(cases, "status"),
+        "level_distribution": _distribution(cases, "level"),
         "priority_distribution": _distribution(cases, "priority"),
         "average_resolution_hours": round(sum(resolution_hours) / len(resolution_hours), 1) if resolution_hours else None,
     }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LineChart, PieChart } from 'echarts/charts'
+import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, GraphicComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { init, use, type ECharts } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -8,7 +8,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps<{ option: EChartsOption }>()
 const chartEl = ref<HTMLDivElement>()
-use([LineChart, PieChart, GridComponent, GraphicComponent, LegendComponent, TooltipComponent, CanvasRenderer])
+use([BarChart, LineChart, PieChart, GridComponent, GraphicComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 let chart: ECharts | undefined
 let observer: ResizeObserver | undefined

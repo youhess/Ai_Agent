@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_temperature: float = 0.2
     llm_timeout: int = 60
+    embedding_model: str = ""
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
+    embedding_timeout: int = 30
+    rag_min_score: float = 0.04
     frontend_origin: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(
@@ -35,6 +40,14 @@ class Settings(BaseSettings):
     def knowledge_dir(self) -> Path:
         path = Path(self.knowledge_directory)
         return path if path.is_absolute() else ROOT_DIR / path
+
+    @property
+    def managed_knowledge_dir(self) -> Path:
+        return self.database_file.parent / "knowledge"
+
+    @property
+    def imports_dir(self) -> Path:
+        return self.database_file.parent / "imports"
 
 
 @lru_cache

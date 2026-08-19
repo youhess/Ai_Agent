@@ -15,6 +15,11 @@ defineProps<{ name: string }>()
   <svg v-else-if="name === 'close'" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
   <svg v-else-if="name === 'database'" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
   <svg v-else-if="name === 'menu'" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  <svg v-else-if="name === 'shield'" viewBox="0 0 24 24"><path d="M12 2.5 20 6v5.5c0 5-3.3 8.5-8 10-4.7-1.5-8-5-8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+  <svg v-else-if="name === 'bot'" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 3v4M9 3h6M8 12h.01M16 12h.01M9 16h6M2 11v4M22 11v4"/></svg>
+  <svg v-else-if="name === 'warning'" viewBox="0 0 24 24"><path d="m12 3 10 18H2z"/><path d="M12 9v5M12 18h.01"/></svg>
+  <svg v-else-if="name === 'trend'" viewBox="0 0 24 24"><path d="M4 18 9 12l4 3 7-9M15 6h5v5"/></svg>
+  <svg v-else-if="name === 'action'" viewBox="0 0 24 24"><path d="M7 4h10v17H7zM9 4V2h6v2M10 9h4M10 13h4M10 17h3"/></svg>
   <svg v-else viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
 </template>
 

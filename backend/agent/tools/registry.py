@@ -1,6 +1,13 @@
 from langchain_core.tools import BaseTool
 
-from agent.tools.analytics_tools import analyse_case_trend, get_case_statistics, get_high_risk_cases
+from agent.tools.analytics_tools import (
+    aggregate_cases,
+    analyse_case_trend,
+    compare_case_periods,
+    find_recurring_locations,
+    get_case_statistics,
+    get_high_risk_cases,
+)
 from agent.tools.case_tools import get_case_detail, query_cases
 from agent.tools.knowledge_tools import search_knowledge_base
 
@@ -13,7 +20,11 @@ def register_tools(tools: list[BaseTool]) -> None:
         TOOL_REGISTRY[registered_tool.name] = registered_tool
 
 
-register_tools([query_cases, get_case_statistics, analyse_case_trend, get_high_risk_cases, get_case_detail, search_knowledge_base])
+register_tools([
+    query_cases, get_case_statistics, analyse_case_trend, get_high_risk_cases,
+    aggregate_cases, compare_case_periods, find_recurring_locations,
+    get_case_detail, search_knowledge_base,
+])
 
 
 def get_tools() -> list[BaseTool]:
