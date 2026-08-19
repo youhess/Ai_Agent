@@ -16,6 +16,10 @@ def test_health_dashboard_and_cases():
         assert response.status_code == 200
         assert response.json()["count"] > 0
         assert all(item["district"] == "滨江区" for item in response.json()["items"])
+        case_id = response.json()["items"][0]["id"]
+        keyword_result = client.get("/api/cases", params={"keyword": case_id}).json()
+        assert keyword_result["count"] == 1
+        assert keyword_result["items"][0]["id"] == case_id
 
 
 def _sse_events(response_text: str) -> list[dict]:

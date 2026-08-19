@@ -80,7 +80,7 @@ export async function streamAgent(
     body: JSON.stringify({ question, message: question, history }),
     signal,
   })
-  if (!response.ok) throw new Error(`AI 分析服务异常（${response.status}）`)
+  if (!response.ok) throw new Error(`智能分析服务异常（${response.status}）`)
   if (!response.body) throw new Error('当前浏览器无法读取流式响应')
 
   const reader = response.body.getReader()

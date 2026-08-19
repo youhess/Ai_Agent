@@ -10,7 +10,7 @@ const error = ref('')
 
 onMounted(async () => {
   try { config.value = await getAgentConfig() }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : 'Agent 配置加载失败' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : '智能分析配置加载失败' }
   finally { loading.value = false }
 })
 </script>
@@ -18,16 +18,16 @@ onMounted(async () => {
 <template>
   <div class="studio-page">
     <header class="studio-page-header">
-      <div><span class="studio-eyebrow">AGENT CAPABILITIES</span><h1>Agent 配置</h1><p>查看当前智能体模型、检索能力与可调用业务工具</p></div>
+      <div><span class="studio-section-label">平台管理中心</span><h1>智能分析配置</h1><p>查看当前分析模型、知识检索方式与业务能力</p></div>
       <span class="readonly-badge"><AppIcon name="shield" />只读模式</span>
     </header>
     <div v-if="error" class="studio-alert error"><AppIcon name="warning" />{{ error }}</div>
-    <div v-if="loading" class="studio-loading">正在读取 Agent 配置…</div>
+    <div v-if="loading" class="studio-loading">正在读取智能分析配置…</div>
 
     <template v-if="config">
       <section class="agent-profile-card">
         <span class="agent-profile-icon"><AppIcon name="bot" /></span>
-        <div><small>当前智能体</small><h2>{{ config.agent_name }}</h2><p>面向社会治理事件查询、趋势研判、风险识别和知识辅助的业务 Agent</p></div>
+        <div><small>当前分析助手</small><h2>{{ config.agent_name }}</h2><p>用于社会治理事件查询、趋势研判、风险识别和政策资料辅助</p></div>
         <span class="studio-status indexed">运行配置已加载</span>
       </section>
 
@@ -41,11 +41,11 @@ onMounted(async () => {
       </section>
 
       <section class="studio-panel">
-        <div class="studio-panel-header"><div><h2>业务工具</h2><p>Agent 可根据问题动态选择以下工具；本页面不提供在线开关</p></div><span class="studio-count">{{ config.tools.length }} 个已启用</span></div>
-        <div class="tool-grid"><article v-for="tool in config.tools" :key="tool.name"><span><AppIcon name="action" /></span><div><strong>{{ tool.name }}</strong><p>{{ tool.description }}</p></div><i title="已启用" /></article></div>
+        <div class="studio-panel-header"><div><h2>业务能力</h2><p>系统可根据问题自动调用以下分析能力，本页面不提供在线开关</p></div><span class="studio-count">{{ config.tools.length }} 项已启用</span></div>
+        <div class="tool-grid"><article v-for="tool in config.tools" :key="tool.name"><span><AppIcon name="action" /></span><div><strong>{{ tool.description }}</strong><p>{{ tool.name }}</p></div><i title="已启用" /></article></div>
       </section>
 
-      <div class="readonly-note"><AppIcon name="shield" /><div><strong>为什么当前不开放编辑？</strong><p>比赛演示期间，模型、Prompt 与工具配置保持只读，避免误操作影响现场闭环。密钥只通过本机环境变量配置，接口不会返回密钥内容。</p></div></div>
+      <div class="readonly-note"><AppIcon name="shield" /><div><strong>配置安全说明</strong><p>演示期间模型、提示规则与业务能力保持只读，避免误操作影响系统运行。服务密钥仅通过本机环境变量配置，页面和接口均不会返回密钥内容。</p></div></div>
     </template>
   </div>
 </template>

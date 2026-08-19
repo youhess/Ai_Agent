@@ -61,7 +61,7 @@ onMounted(() => load())
 <template>
   <div class="studio-page">
     <header class="studio-page-header">
-      <div><span class="studio-eyebrow">BUSINESS DATA</span><h1>业务数据</h1><p>通过标准模板预检并更新 Agent 使用的治理事件数据</p></div>
+      <div><span class="studio-section-label">平台管理中心</span><h1>业务数据</h1><p>通过标准模板预检并更新统计分析使用的治理事件数据</p></div>
       <div class="studio-header-actions">
         <button class="studio-button secondary" @click="downloadTemplate"><AppIcon name="document" />下载标准模板</button>
         <button class="studio-button primary" :disabled="working" @click="fileInput?.click()"><AppIcon name="database" />{{ working ? '正在预检…' : '导入 Excel / CSV' }}</button>
@@ -75,7 +75,7 @@ onMounted(() => load())
     <section class="studio-stat-grid three">
       <article><span class="studio-stat-icon blue"><AppIcon name="database" /></span><div><small>当前记录</small><strong>{{ summary.record_count }}</strong><span>条治理事件</span></div></article>
       <article><span class="studio-stat-icon green"><AppIcon name="clock" /></span><div><small>最近数据时间</small><strong class="text-value">{{ formatTime(summary.latest_case_at).slice(0, 10) }}</strong><span>按事件上报时间统计</span></div></article>
-      <article><span class="studio-stat-icon orange"><AppIcon name="refresh" /></span><div><small>最近导入</small><strong class="text-value">{{ summary.latest_import?.file_name || '示例数据' }}</strong><span>{{ summary.latest_import ? `${summary.latest_import.row_count} 条 · ${formatTime(summary.latest_import.committed_at)}` : '尚未通过 Studio 导入' }}</span></div></article>
+      <article><span class="studio-stat-icon orange"><AppIcon name="refresh" /></span><div><small>最近导入</small><strong class="text-value">{{ summary.latest_import?.file_name || '示例数据' }}</strong><span>{{ summary.latest_import ? `${summary.latest_import.row_count} 条 · ${formatTime(summary.latest_import.committed_at)}` : '尚未通过管理中心导入' }}</span></div></article>
     </section>
 
     <section v-if="preview" class="studio-panel import-preview-panel">
@@ -95,7 +95,7 @@ onMounted(() => load())
     </section>
 
     <section class="studio-panel">
-      <div class="studio-panel-header"><div><h2>当前数据</h2><p>Agent Tool、综合态势和事件中心共享这一数据集</p></div><span class="studio-count">共 {{ rows.total }} 条</span></div>
+      <div class="studio-panel-header"><div><h2>当前数据</h2><p>综合态势、事件中心和智能分析共享这一数据集</p></div><span class="studio-count">共 {{ rows.total }} 条</span></div>
       <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>事件编号</th><th>事件描述</th><th>区域 / 街道</th><th>类型</th><th>优先级</th><th>状态</th><th>上报时间</th></tr></thead>
         <tbody>
           <tr v-for="item in rows.items" :key="item.id"><td class="mono">{{ item.id }}</td><td class="wide-cell">{{ item.description }}</td><td>{{ item.district }}<small class="table-subline">{{ item.street }}</small></td><td>{{ item.category }}</td><td>{{ item.priority }}</td><td><span class="studio-status" :class="item.status === '已完成' ? 'indexed' : 'pending'">{{ item.status }}</span></td><td>{{ formatTime(item.created_at) }}</td></tr>

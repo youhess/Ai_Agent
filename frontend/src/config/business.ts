@@ -41,9 +41,9 @@ export const BUSINESS = {
     closed: '已关闭',
   } as Record<string, string>,
   assistant: {
-    title: '社会治理分析助手',
-    welcomeTitle: '您好，我是治理分析助手',
-    welcomeText: '我可以协助分析事件趋势、定位重点风险、梳理处置情况，并提供可追溯的数据依据。',
+    title: 'AI智能助手',
+    welcomeTitle: '您好，我是 AI 智能助手“小智”',
+    welcomeText: '很高兴为您服务。我可以协助查询治理事件、分析变化趋势、解读政策资料并梳理处置建议。',
     inputPlaceholder: '请输入您想了解的治理问题…',
     send: '发送',
     stop: '停止生成',

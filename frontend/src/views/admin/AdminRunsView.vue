@@ -38,7 +38,7 @@ onMounted(() => load())
 
 <template>
   <div class="studio-page">
-    <header class="studio-page-header"><div><span class="studio-eyebrow">AGENT OBSERVABILITY</span><h1>运行记录</h1><p>查看每次分析任务的状态、业务步骤、工具调用与信息来源</p></div><span class="retention-note">保留最近 500 条</span></header>
+    <header class="studio-page-header"><div><span class="studio-section-label">平台管理中心</span><h1>分析记录</h1><p>查看每次分析任务的状态、执行步骤、业务能力与信息来源</p></div><span class="retention-note">保留最近 500 条</span></header>
     <div v-if="error" class="studio-alert error"><AppIcon name="warning" />{{ error }}</div>
 
     <section class="studio-panel run-filter-panel">
@@ -48,7 +48,7 @@ onMounted(() => load())
     </section>
 
     <section class="studio-panel">
-      <div class="studio-panel-header"><div><h2>Agent Runs</h2><p>仅记录可解释的业务执行过程，不保存模型思维链</p></div><span class="studio-count">共 {{ data.total }} 条</span></div>
+      <div class="studio-panel-header"><div><h2>任务列表</h2><p>仅记录可解释的业务执行过程，不记录模型内部推理内容</p></div><span class="studio-count">共 {{ data.total }} 条</span></div>
       <div class="studio-table-wrap"><table class="studio-table runs-table"><thead><tr><th>运行编号</th><th>用户问题</th><th>状态</th><th>耗时</th><th>调用工具</th><th>开始时间</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="item in data.items" :key="item.id"><td class="mono">#{{ item.id.slice(0, 8) }}</td><td class="run-question">{{ item.question }}</td><td><span class="studio-status" :class="item.status">{{ statusLabels[item.status] }}</span></td><td>{{ duration(item.duration_ms) }}</td><td><div class="tool-tags"><span v-for="tool in item.tools.slice(0, 2)" :key="tool">{{ tool }}</span><small v-if="item.tools.length > 2">+{{ item.tools.length - 2 }}</small><span v-if="!item.tools.length" class="empty-tool">自然对话</span></div></td><td>{{ formatTime(item.started_at) }}</td><td><button class="text-button" @click="openDetail(item.id)">查看详情</button></td></tr>
@@ -59,7 +59,7 @@ onMounted(() => load())
 
     <div v-if="detail || detailLoading" class="run-detail-mask" @click.self="detail = null">
       <aside class="run-detail-drawer">
-        <header><div><span>RUN DETAIL</span><h2>{{ detail ? `#${detail.id.slice(0, 8)}` : '正在加载' }}</h2></div><button aria-label="关闭详情" @click="detail = null"><AppIcon name="close" /></button></header>
+        <header><div><span>任务详情</span><h2>{{ detail ? `#${detail.id.slice(0, 8)}` : '正在加载' }}</h2></div><button aria-label="关闭详情" @click="detail = null"><AppIcon name="close" /></button></header>
         <div v-if="detail" class="run-detail-content">
           <section class="run-summary"><span class="studio-status" :class="detail.status">{{ statusLabels[detail.status] }}</span><strong>{{ detail.question }}</strong><dl><div><dt>开始时间</dt><dd>{{ formatTime(detail.started_at) }}</dd></div><div><dt>运行耗时</dt><dd>{{ duration(detail.duration_ms) }}</dd></div><div><dt>意图识别</dt><dd>{{ detail.intent || '一般交流' }}</dd></div></dl></section>
           <section><h3>执行时间线</h3><div class="run-timeline"><article v-for="step in detail.steps" :key="step.position"><i><AppIcon name="check" /></i><div><small>{{ formatTime(step.occurred_at).slice(11) }}</small><strong>{{ step.title }}</strong><p>{{ step.detail }}</p></div></article><p v-if="!detail.steps.length" class="studio-empty">本次为自然对话，没有调用业务分析步骤</p></div></section>

@@ -7,9 +7,10 @@ router = APIRouter(prefix="/api/cases", tags=["cases"])
 
 @router.get("")
 def list_cases(district: str | None = None, category: str | None = None, status: str | None = None,
-               priority: str | None = None, days: int | None = Query(None, ge=1, le=3650),
+               priority: str | None = None, keyword: str | None = Query(None, max_length=100),
+               days: int | None = Query(None, ge=1, le=3650),
                limit: int = Query(50, ge=1, le=500)):
-    rows = query_cases(district=district, category=category, status=status, priority=priority, days=days, limit=limit)
+    rows = query_cases(district=district, category=category, status=status, priority=priority, keyword=keyword, days=days, limit=limit)
     return {"items": rows, "count": len(rows)}
 
 

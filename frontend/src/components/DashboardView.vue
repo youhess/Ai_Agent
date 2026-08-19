@@ -146,8 +146,8 @@ onMounted(loadData)
       </article>
       <article class="panel ai-summary-panel">
         <header class="panel-header ai-summary-header">
-          <div><h2><AppIcon name="bot" />AI 研判摘要</h2></div>
-          <span>实时</span>
+          <div><h2><AppIcon name="action" />态势研判</h2></div>
+          <span>辅助参考</span>
         </header>
         <div class="ai-insight-list">
           <div v-for="item in aiInsights" :key="item.title" class="ai-insight" :class="`tone-${item.tone}`">
@@ -189,6 +189,5 @@ onMounted(loadData)
       </div>
       <div v-else class="broadcast-empty">{{ loading ? '正在加载事件动态…' : BUSINESS.caseTable.empty }}</div>
     </section>
-    <footer class="dashboard-footer"><span>{{ BUSINESS.organization }} · {{ BUSINESS.region }}</span><span>{{ BUSINESS.footer }}</span></footer>
   </div>
 </template>

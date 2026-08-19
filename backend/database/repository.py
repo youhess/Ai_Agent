@@ -12,7 +12,7 @@ def query_cases(
     status: str | None = None, statuses: list[str] | None = None, level: str | None = None,
     priority: str | None = None, evidence_complete: bool | None = None,
     days: int | None = None, start_date: str | None = None,
-    end_date: str | None = None, limit: int = 200,
+    end_date: str | None = None, keyword: str | None = None, limit: int = 200,
 ) -> list[dict[str, Any]]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -29,6 +29,10 @@ def query_cases(
     if evidence_complete is not None:
         clauses.append("evidence_complete = ?")
         params.append(int(evidence_complete))
+    if keyword:
+        clauses.append("(id LIKE ? OR description LIKE ? OR district LIKE ? OR street LIKE ? OR category LIKE ?)")
+        pattern = f"%{keyword.strip()}%"
+        params.extend([pattern] * 5)
     if days is not None:
         if not 1 <= days <= 3650:
             raise ValueError("days 必须在 1 到 3650 之间")

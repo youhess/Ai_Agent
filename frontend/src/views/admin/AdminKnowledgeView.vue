@@ -83,7 +83,7 @@ onMounted(load)
 <template>
   <div class="studio-page">
     <header class="studio-page-header">
-      <div><span class="studio-eyebrow">KNOWLEDGE BASE</span><h1>知识库</h1><p>维护 Agent 可检索的治理规范、业务指南和处置资料</p></div>
+      <div><span class="studio-section-label">平台管理中心</span><h1>知识库</h1><p>统一维护治理规范、业务指南和处置资料</p></div>
       <div class="studio-header-actions">
         <button class="studio-button secondary" :disabled="working" @click="reindex"><AppIcon name="refresh" />重新建立索引</button>
         <button class="studio-button primary" :disabled="working" @click="fileInput?.click()"><AppIcon name="document" />{{ working ? '正在处理…' : '上传文件' }}</button>

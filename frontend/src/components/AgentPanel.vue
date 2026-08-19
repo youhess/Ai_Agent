@@ -11,6 +11,7 @@ const emit = defineEmits<{ close: [] }>()
 const messages = ref<ChatMessage[]>([])
 const question = ref('')
 const streaming = ref(false)
+const expanded = ref(false)
 const messageList = ref<HTMLElement>()
 let controller: AbortController | null = null
 
@@ -76,7 +77,7 @@ async function send(text?: string) {
       else assistant.content += answerText(event.data)
     } else if (event.type === 'error') {
       assistant.error = true
-      assistant.content += `\n\n${answerText(event.data) || 'AI 分析服务返回异常，请稍后重试。'}`
+      assistant.content += `\n\n${answerText(event.data) || '智能分析服务返回异常，请稍后重试。'}`
     } else if (event.type === 'done') {
       assistant.traces?.forEach((trace) => { if (trace.status === 'running') trace.status = 'done' })
     }
@@ -104,6 +105,7 @@ function stop() {
 }
 
 function close() {
+  expanded.value = false
   emit('close')
 }
 
@@ -111,29 +113,41 @@ watch(() => props.open, (open) => { if (open) scrollBottom() })
 </script>
 
 <template>
-  <Transition name="fade"><div v-if="open" class="drawer-backdrop" @click="close" /></Transition>
-  <Transition name="slide">
-    <aside v-if="open" class="agent-drawer" aria-label="社会治理分析助手">
+  <Transition name="chat-window">
+    <aside v-if="open" class="agent-drawer" :class="{ expanded }" aria-label="AI智能助手会话窗口">
       <header class="agent-header">
-        <div class="agent-identity"><span class="agent-logo"><AppIcon name="spark" /></span><div><h2>{{ BUSINESS.assistant.title }}</h2></div></div>
-        <button class="icon-button" aria-label="关闭" @click="close"><AppIcon name="close" /></button>
+        <div class="agent-identity"><span class="agent-logo"><AppIcon name="bot" /></span><div><h2>{{ BUSINESS.assistant.title }}<b>测试版</b></h2><p>政策查询 · 数据分析 · 处置参考</p></div></div>
+        <div class="agent-window-actions">
+          <button class="icon-button" :aria-label="expanded ? '恢复窗口' : '展开窗口'" @click="expanded = !expanded"><AppIcon :name="expanded ? 'restore' : 'maximize'" /></button>
+          <button class="icon-button" aria-label="最小化" @click="close"><AppIcon name="minimize" /></button>
+        </div>
       </header>
 
       <div ref="messageList" class="message-list">
         <div v-if="!messages.length" class="agent-welcome">
-          <span class="welcome-mark"><AppIcon name="spark" /></span>
-          <h3>{{ BUSINESS.assistant.welcomeTitle }}</h3>
-          <p>{{ BUSINESS.assistant.welcomeText }}</p>
+          <div class="welcome-conversation">
+            <span class="welcome-mark"><AppIcon name="bot" /></span>
+            <div class="welcome-bubble">
+              <h3>{{ BUSINESS.assistant.welcomeTitle }}</h3>
+              <p>{{ BUSINESS.assistant.welcomeText }}</p>
+            </div>
+          </div>
           <div class="suggestions">
             <span>{{ BUSINESS.assistant.suggestionsTitle }}</span>
             <button v-for="item in BUSINESS.assistant.suggestions" :key="item" @click="send(item)">{{ item }}<b>›</b></button>
+          </div>
+          <div class="assistant-capabilities">
+            <span><AppIcon name="bot" /><b>智能问答</b><small>即时响应</small></span>
+            <span><AppIcon name="trend" /><b>数据分析</b><small>辅助研判</small></span>
+            <span><AppIcon name="document" /><b>政策解读</b><small>资料可溯</small></span>
+            <span><AppIcon name="action" /><b>治理建议</b><small>处置参考</small></span>
           </div>
         </div>
 
         <template v-for="message in messages" :key="message.id">
           <div v-if="message.role === 'user'" class="message-row user-row"><div class="user-message">{{ message.content }}</div><span class="user-avatar">我</span></div>
           <div v-else class="message-row assistant-row">
-            <span class="assistant-avatar"><AppIcon name="spark" /></span>
+            <span class="assistant-avatar"><AppIcon name="bot" /></span>
             <div class="assistant-body">
               <div v-if="message.traces?.length" class="trace-card">
                 <button class="trace-heading" :aria-expanded="message.traceExpanded" @click="message.traceExpanded = !message.traceExpanded">

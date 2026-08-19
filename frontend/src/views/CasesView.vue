@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getCases } from '../api'
 import { BUSINESS } from '../config/business'
 import type { GovernanceCase } from '../types'
 import AppIcon from '../components/AppIcon.vue'
 
 const loading = ref(true)
+const route = useRoute()
 const error = ref('')
 const cases = ref<GovernanceCase[]>([])
-const filters = reactive({ district: '', category: '', status: '', priority: '' })
+const filters = reactive({ keyword: '', district: '', category: '', status: '', priority: '' })
 const districts = ['滨江区', '上城区', '拱墅区', '西湖区']
 const statuses = ['待处理', '处理中', '已完成']
 const priorities = ['高', '中', '低']
@@ -26,7 +28,7 @@ async function load() {
 }
 
 function reset() {
-  Object.assign(filters, { district: '', category: '', status: '', priority: '' })
+  Object.assign(filters, { keyword: '', district: '', category: '', status: '', priority: '' })
   load()
 }
 
@@ -38,7 +40,17 @@ function formatTime(value?: string) {
   return value ? value.replace('T', ' ').slice(0, 16) : '-'
 }
 
-onMounted(load)
+onMounted(() => {
+  filters.keyword = String(route.query.keyword ?? '')
+  load()
+})
+watch(() => route.query.keyword, (keyword) => {
+  const value = String(keyword ?? '')
+  if (value !== filters.keyword) {
+    filters.keyword = value
+    load()
+  }
+})
 </script>
 
 <template>
@@ -53,6 +65,7 @@ onMounted(load)
     </section>
 
     <section class="panel filter-panel">
+      <label>关键词<input v-model="filters.keyword" placeholder="事件编号或关键词" @keyup.enter="load"></label>
       <label>所属区域<select v-model="filters.district"><option value="">全部区域</option><option v-for="item in districts" :key="item">{{ item }}</option></select></label>
       <label>事件类别<select v-model="filters.category"><option value="">全部类别</option><option v-for="item in BUSINESS.categories" :key="item">{{ item }}</option></select></label>
       <label>处置状态<select v-model="filters.status"><option value="">全部状态</option><option v-for="item in statuses" :key="item">{{ item }}</option></select></label>
