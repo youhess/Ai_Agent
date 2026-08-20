@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from database.repository import get_case, query_cases
+from agent.tools.case_tools import build_case_collaboration_recommendation
+from database.repository import WorkflowConflict, advance_case_workflow, get_case, query_cases
+from schemas.workflow import WorkflowActionRequest
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -20,3 +22,22 @@ def case_detail(case_id: str):
     if not case:
         raise HTTPException(status_code=404, detail="未找到该治理事件")
     return case
+
+
+@router.get("/{case_id}/collaboration-recommendation")
+def collaboration_recommendation(case_id: str):
+    result = build_case_collaboration_recommendation(case_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail="未找到该治理事件")
+    return result
+
+
+@router.post("/{case_id}/workflow")
+def execute_workflow_action(case_id: str, request: WorkflowActionRequest):
+    try:
+        case = advance_case_workflow(case_id, **request.model_dump())
+    except WorkflowConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not case:
+        raise HTTPException(status_code=404, detail="未找到该治理事件")
+    return {"success": True, "action": request.action, "case": case}

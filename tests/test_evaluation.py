@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.graph import agent_graph
+from agent.graph import _suggested_questions, agent_graph
 from agent.planner import build_deterministic_plan
 from rag.retriever import retrieve
 
@@ -55,3 +55,22 @@ def test_ranked_multi_tool_query_passes_top_group_into_followup():
     assert "aggregate_cases" in tools and "query_ranked_group_cases" in tools
     assert tools["query_ranked_group_cases"]["group"] == tools["aggregate_cases"]["groups"][0]["name"]
     assert tools["query_ranked_group_cases"]["count"] <= 3
+
+
+def test_only_unmatched_questions_receive_recommendations():
+    common = {"history": [], "tool_results": [], "retrieved_context": [], "execution_trace": []}
+    unmatched = {
+        **common, "user_query": "明天天气怎么样？",
+        "plan": build_deterministic_plan("明天天气怎么样？").model_dump(),
+    }
+    greeting = {
+        **common, "user_query": "你好",
+        "plan": build_deterministic_plan("你好").model_dump(),
+    }
+    knowledge_miss = {
+        **common, "user_query": "知识库里有没有月球停车规范？",
+        "plan": build_deterministic_plan("知识库里有没有月球停车规范？").model_dump(),
+    }
+    assert len(_suggested_questions(unmatched)) == 3
+    assert _suggested_questions(greeting) == []
+    assert any("治理规范" in item for item in _suggested_questions(knowledge_miss))

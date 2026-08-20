@@ -20,6 +20,13 @@ def trace(step: str, title: str, summary: str, status: str = "completed") -> dic
     return {"step": step, "title": title, "status": status, "summary": summary}
 
 
+def _knowledge_trace_summary(sources: list[dict[str, Any]]) -> str:
+    if not sources:
+        return "知识库无匹配结果"
+    provider = "星辰向量库" if sources[0].get("retrieval_mode") == "xingchen" else "本地知识索引"
+    return f"{provider}返回 {len(sources)} 条可追溯资料"
+
+
 def _clean_filters(plan: QueryPlan) -> dict[str, Any]:
     return {key: value for key, value in plan.filters.model_dump().items() if value not in (None, [])}
 
@@ -44,10 +51,18 @@ async def parse_request(state: AgentState) -> dict:
         entities["case_id"] = plan.case_id
     if plan.group_by:
         entities["group_by"] = plan.group_by
+    if plan.workflow_action:
+        entities["workflow_action"] = plan.workflow_action
+        entities["confirmed"] = plan.confirmed
+        if plan.responsible_unit:
+            entities["responsible_unit"] = plan.responsible_unit
+        if plan.collaborator_units:
+            entities["collaborator_units"] = plan.collaborator_units
     operation_labels = {
         "chat": "一般交流", "list_cases": "查询事件明细", "case_detail": "查询事件详情",
         "aggregate": "聚合统计", "compare_periods": "周期对比", "recurring_locations": "重复问题分析",
-        "knowledge": "检索治理资料", "comprehensive": "综合分析", "refuse": "安全边界处理",
+        "knowledge": "检索治理资料", "comprehensive": "综合分析", "workflow": "推进协同处置",
+        "refuse": "安全边界处理",
     }
     return {
         "plan": plan.model_dump(),
@@ -68,7 +83,7 @@ def choose_route(state: AgentState) -> Literal["respond", "knowledge", "tools"]:
 
 def knowledge_query(state: AgentState) -> dict:
     sources = TOOL_REGISTRY["search_knowledge_base"].invoke({"query": state["user_query"], "limit": 4})
-    summary = f"找到 {len(sources)} 条模拟处置资料" if sources else "知识库无匹配结果"
+    summary = _knowledge_trace_summary(sources)
     return {
         "retrieved_context": sources,
         "tool_results": [{"tool": "search_knowledge_base", "result": {"count": len(sources)}}],
@@ -127,7 +142,7 @@ def _run_comprehensive(state: AgentState, plan: QueryPlan, filters: dict[str, An
     if plan.needs_knowledge:
         sources = TOOL_REGISTRY["search_knowledge_base"].invoke({"query": state["user_query"], "limit": 4})
         results.append({"tool": "search_knowledge_base", "result": {"count": len(sources)}})
-        traces.append(trace("search_knowledge_base", "检索治理知识库", f"找到 {len(sources)} 条模拟资料"))
+        traces.append(trace("search_knowledge_base", "检索治理知识库", _knowledge_trace_summary(sources)))
     return {"cases": rows, "tool_results": results, "retrieved_context": sources, "execution_trace": traces}
 
 
@@ -135,13 +150,58 @@ def execute_plan(state: AgentState) -> dict:
     plan = QueryPlan.model_validate(state["plan"])
     filters = _clean_filters(plan)
     operation = plan.operation
+    if operation == "workflow":
+        result = TOOL_REGISTRY["advance_case_workflow"].invoke({
+            "case_id": plan.case_id,
+            "action": plan.workflow_action,
+            "confirmed": plan.confirmed,
+            "responsible_unit": plan.responsible_unit,
+            "collaborator_units": plan.collaborator_units,
+            "evidence_complete": plan.evidence_complete,
+            "note": plan.workflow_note,
+        })
+        if result.get("success"):
+            detail = result["case"]
+            summary = f"事件状态已写入为“{detail['status']}”，处置轨迹已更新"
+            action_trace = trace("advance_case_workflow", "执行协同治理动作", summary)
+        elif result.get("confirmation_required"):
+            detail = result.get("case")
+            action_trace = trace("prepare_case_workflow", "生成业务操作预览", "等待工作人员明确确认，尚未修改事件")
+        else:
+            detail = None
+            action_trace = trace("advance_case_workflow", "校验协同治理动作", result.get("error", "操作未执行"), "error")
+        return {
+            "cases": [detail] if detail else [],
+            "tool_results": [{"tool": "advance_case_workflow", "result": result}],
+            "execution_trace": [action_trace],
+        }
     if operation == "case_detail":
         detail = TOOL_REGISTRY["get_case_detail"].invoke({"case_id": plan.case_id})
         found = "error" not in detail
+        results = [{"tool": "get_case_detail", "result": detail}]
+        traces = [trace("get_case_detail", "查询事件详情", "已找到事件" if found else "未找到指定事件")]
+        sources: list[dict[str, Any]] = []
+        wants_collaboration = any(word in state["user_query"] for word in ["派单建议", "协同派单", "协同方案", "主办单位", "协办单位", "分析", "研判"])
+        if found and wants_collaboration:
+            recommendation = TOOL_REGISTRY["recommend_case_collaboration"].invoke({"case_id": plan.case_id})
+            results.append({"tool": "recommend_case_collaboration", "result": recommendation})
+            traces.append(trace("recommend_case_collaboration", "研判主协办方案", f"建议由{recommendation['recommended_primary_unit']}主办"))
+        if found and plan.needs_knowledge:
+            case_context = {
+                key: detail.get(key) for key in (
+                    "id", "category", "district", "street", "level", "priority", "status", "responsible_unit",
+                )
+            }
+            sources = TOOL_REGISTRY["search_knowledge_base"].invoke({
+                "query": state["user_query"], "limit": 4, "case_context": case_context,
+            })
+            results.append({"tool": "search_knowledge_base", "result": {"count": len(sources)}})
+            traces.append(trace("search_knowledge_base", "检索协同处置规则", _knowledge_trace_summary(sources)))
         return {
             "cases": [detail] if found else [],
-            "tool_results": [{"tool": "get_case_detail", "result": detail}],
-            "execution_trace": [trace("get_case_detail", "查询事件详情", "已找到事件" if found else "未找到指定事件")],
+            "tool_results": results,
+            "retrieved_context": sources,
+            "execution_trace": traces,
         }
     if operation == "list_cases":
         rows = TOOL_REGISTRY["query_cases"].invoke({**filters, "limit": plan.limit})
@@ -175,7 +235,7 @@ def execute_plan(state: AgentState) -> dict:
             sources = TOOL_REGISTRY["search_knowledge_base"].invoke({"query": state["user_query"], "limit": 4})
             updates["retrieved_context"] = sources
             updates["tool_results"].append({"tool": "search_knowledge_base", "result": {"count": len(sources)}})
-            updates["execution_trace"].append(trace("search_knowledge_base", "检索治理知识库", f"找到 {len(sources)} 条模拟资料"))
+            updates["execution_trace"].append(trace("search_knowledge_base", "检索治理知识库", _knowledge_trace_summary(sources)))
         return updates
     if operation == "recurring_locations":
         result = TOOL_REGISTRY["find_recurring_locations"].invoke({
@@ -192,7 +252,7 @@ def execute_plan(state: AgentState) -> dict:
             sources = TOOL_REGISTRY["search_knowledge_base"].invoke({"query": state["user_query"], "limit": 4})
             updates["retrieved_context"] = sources
             updates["tool_results"].append({"tool": "search_knowledge_base", "result": {"count": len(sources)}})
-            updates["execution_trace"].append(trace("search_knowledge_base", "检索治理知识库", f"找到 {len(sources)} 条模拟资料"))
+            updates["execution_trace"].append(trace("search_knowledge_base", "检索治理知识库", _knowledge_trace_summary(sources)))
         return updates
     return _run_comprehensive(state, plan, filters)
 
@@ -211,6 +271,10 @@ def analyse(state: AgentState) -> dict:
         "top_category": max(category_distribution, key=category_distribution.get, default=None),
         "anomalies": trend.get("anomalies", []),
     }
+    if plan.operation == "workflow":
+        result = results.get("advance_case_workflow", {})
+        summary = "业务状态与最新处置轨迹已复核" if result.get("success") else "已核验操作条件与人工确认状态"
+        return {"analysis_result": analysis, "execution_trace": [trace("analyse", "核验业务状态", summary)]}
     return {"analysis_result": analysis, "execution_trace": [trace("analyse", "整理查询证据", "已形成可追溯的回答依据")]}
 
 
@@ -229,6 +293,67 @@ def _knowledge_fallback(sources: list[dict[str, Any]]) -> str:
     return f"## 处置参考\n\n{excerpts}\n\n> 以上内容来自虚构竞赛 Demo 文档，不是真实法律、政策或现实处置指令。"
 
 
+GENERAL_SUGGESTIONS = [
+    "最近7天各区域事件数量是多少？",
+    "目前有哪些高风险待处理事件？",
+    "哪个事件类别增长最快？",
+]
+KNOWLEDGE_SUGGESTIONS = [
+    "根据治理规范，高风险事件应该如何处理？",
+    "治理事件办结需要保留哪些证据？",
+    "知识库中有哪些事件分级规则？",
+]
+
+
+def _suggested_questions(state: AgentState) -> list[str]:
+    plan = QueryPlan.model_validate(state["plan"])
+    query = state["user_query"].strip().lower()
+    results = {item["tool"]: item["result"] for item in state.get("tool_results", [])}
+    if plan.operation == "workflow":
+        workflow = results.get("advance_case_workflow", {})
+        case = workflow.get("case") or {}
+        case_id = case.get("id") or plan.case_id
+        if workflow.get("confirmation_required"):
+            return []
+        if workflow.get("success") and case.get("status") == "处理中" and not case.get("evidence_complete"):
+            return [f"确认提交处置结果 {case_id}，证据完整"]
+        if workflow.get("success") and case.get("status") == "处理中" and case.get("evidence_complete"):
+            return [f"确认复核办结 {case_id}", f"确认复核退回补充 {case_id}"]
+        if workflow.get("success") and case.get("status") == "已完成":
+            return [f"查询 {case_id} 的完整处置轨迹"]
+        return []
+    if plan.operation == "chat":
+        understood_chat = any(word in query for word in [
+            "你好", "您好", "hi", "hello", "在吗", "谢谢", "感谢", "辛苦了",
+            "能做什么", "可以做什么", "有什么功能", "怎么使用", "使用帮助",
+        ])
+        return [] if understood_chat else GENERAL_SUGGESTIONS
+    if plan.operation == "knowledge" and not state.get("retrieved_context"):
+        return KNOWLEDGE_SUGGESTIONS
+    if plan.operation == "case_detail" and "error" in results.get("get_case_detail", {}):
+        return ["查询最近上报的治理事件", *GENERAL_SUGGESTIONS[:2]]
+    if plan.operation == "case_detail" and results.get("recommend_case_collaboration", {}).get("recommended_action") == "dispatch":
+        recommendation = results["recommend_case_collaboration"]
+        collaborators = "、".join(recommendation.get("recommended_collaborator_units", []))
+        command = f"确认协同派单 {plan.case_id} 至{recommendation['recommended_primary_unit']}"
+        if collaborators:
+            command += f"，协办{collaborators}"
+        return [command]
+    if plan.operation == "list_cases" and not state.get("cases"):
+        return GENERAL_SUGGESTIONS
+    if plan.operation == "aggregate" and not results.get("aggregate_cases", {}).get("total"):
+        return GENERAL_SUGGESTIONS
+    if plan.operation == "compare_periods":
+        comparison = results.get("compare_case_periods", {})
+        if comparison.get("current_count", 0) == 0 and comparison.get("previous_count", 0) == 0:
+            return GENERAL_SUGGESTIONS
+    if plan.operation == "recurring_locations" and not results.get("find_recurring_locations", {}).get("hotspots"):
+        return GENERAL_SUGGESTIONS
+    if plan.operation == "comprehensive" and not state.get("analysis_result", {}).get("statistics", {}).get("total"):
+        return GENERAL_SUGGESTIONS
+    return []
+
+
 def _fallback_answer(state: AgentState) -> str:
     plan = QueryPlan.model_validate(state["plan"])
     query = state["user_query"].strip()
@@ -238,12 +363,52 @@ def _fallback_answer(state: AgentState) -> str:
         if any(word in query for word in ["谢谢", "感谢", "辛苦了"]):
             return "不客气。你可以继续问我事件数据、变化趋势或治理处置规范。"
         if any(word in query.lower() for word in ["你好", "您好", "hi", "hello", "在吗"]):
-            return "你好！我是社会治理分析助手。你可以直接问我某个区域的事件情况、近期趋势，或者具体事件的处置建议。"
+            return "你好！我是 AI智能助手“小智”。你可以直接问我某个区域的事件情况、近期趋势，或者具体事件的处置建议。"
         return "我可以帮你查询治理事件、分析趋势和检索 Demo 治理资料。你想先看哪个区域、时间范围或问题类别？"
     sources = state.get("retrieved_context", [])
     if plan.operation == "knowledge":
         return _knowledge_fallback(sources)
     results = {item["tool"]: item["result"] for item in state.get("tool_results", [])}
+    if plan.operation == "workflow":
+        result = results.get("advance_case_workflow", {})
+        if result.get("error"):
+            return f"事件 **{plan.case_id or '-'}** 的协同处置操作未执行：{result['error']}。业务状态没有发生变化。"
+        case = result.get("case", {})
+        action_labels = {
+            "dispatch": "协同派单", "submit_result": "提交处置结果",
+            "return_for_rework": "复核退回补充", "approve_close": "复核办结",
+        }
+        action_label = action_labels.get(plan.workflow_action, "业务操作")
+        primary = plan.responsible_unit or case.get("responsible_unit") or "待明确"
+        collaborators = plan.collaborator_units or case.get("collaborator_units") or []
+        if result.get("confirmation_required"):
+            details = [f"- 当前状态：{case.get('status', '-')}", f"- 拟执行动作：{action_label}"]
+            if plan.workflow_action == "dispatch":
+                details.append(f"- 主办单位：{primary}")
+                details.append(f"- 协办单位：{'、'.join(collaborators) if collaborators else '未设置'}")
+            if plan.workflow_action == "submit_result":
+                evidence_text = "完整" if plan.evidence_complete is True else "待补充" if plan.evidence_complete is False else "尚未明确"
+                details.append(f"- 证据状态：{evidence_text}")
+            command = f"确认{action_label} {case.get('id', plan.case_id)}"
+            if plan.workflow_action == "dispatch" and primary != "待明确":
+                command += f" 至{primary}"
+            if plan.workflow_action == "submit_result" and plan.evidence_complete is not None:
+                command += "，证据完整" if plan.evidence_complete else "，证据待补充"
+            return "## 操作预览\n\n" + "\n".join(details) + f"\n\n这是会改变业务状态的操作，目前**尚未执行**。如确认无误，请回复：`{command}`。"
+        if result.get("success"):
+            latest = case.get("timeline", [])[-1] if case.get("timeline") else {}
+            return f"""## {action_label}已执行
+
+事件 **{case.get('id')}** 的业务状态已经真实写入本地数据库。
+
+- 当前状态：**{case.get('status')}**
+- 主办单位：{case.get('responsible_unit') or '-'}
+- 协办单位：{'、'.join(case.get('collaborator_units') or []) or '无'}
+- 证据状态：{'完整' if case.get('evidence_complete') else '待补充'}
+- 最新轨迹：{latest.get('action', '-')} · {latest.get('note', '-')}
+
+> 本次动作由工作人员明确确认，执行结果已进入事件处置轨迹，可在“事件中心”查看。"""
+        return f"事件 **{plan.case_id or '-'}** 的操作没有执行，请检查操作参数后重试。"
     if plan.operation == "case_detail":
         detail = results.get("get_case_detail", {})
         if "error" in detail:
@@ -253,7 +418,7 @@ def _fallback_answer(state: AgentState) -> str:
             f"- {item['occurred_at']} · {item['action']}（{item['operator_role']}）：{item['note']}"
             for item in detail.get("timeline", [])
         ) or "- 当前没有处置节点记录"
-        return f"""事件 **{detail['id']}** 当前状态为 **{detail['status']}**，优先级为 **{detail['priority']}**。
+        answer = f"""事件 **{detail['id']}** 当前状态为 **{detail['status']}**，优先级为 **{detail['priority']}**。
 
 - 区域：{detail['district']} · {detail['street']}
 - 类别：{detail['category']}
@@ -268,6 +433,23 @@ def _fallback_answer(state: AgentState) -> str:
 ### 处置轨迹
 
 {timeline}"""
+        recommendation = results.get("recommend_case_collaboration")
+        if recommendation and "error" not in recommendation:
+            basis = "\n".join(f"- {item}" for item in recommendation.get("basis", []))
+            answer += f"""
+
+### 智能协同方案
+
+- 建议主办：**{recommendation['recommended_primary_unit']}**
+- 建议协办：{'、'.join(recommendation.get('recommended_collaborator_units', [])) or '无'}
+- 人工确认：执行前必须确认
+
+研判依据：
+
+{basis}"""
+        if sources:
+            answer += "\n\n" + _knowledge_fallback(sources)
+        return answer
     if plan.operation == "list_cases":
         rows = state.get("cases", [])
         if not rows:
@@ -379,6 +561,13 @@ async def generate_response(state: AgentState) -> dict:
     fallback = _fallback_answer(state)
     answer = fallback
     response_reset = False
+    plan = QueryPlan.model_validate(state["plan"])
+    if plan.operation == "workflow":
+        return {
+            "final_answer": fallback,
+            "suggestions": _suggested_questions(state),
+            "execution_trace": [trace("generate_response", "生成执行回执", "已返回可验证的业务状态和处置轨迹")],
+        }
     try:
         model = get_chat_model()
         if model is not None:
@@ -386,7 +575,6 @@ async def generate_response(state: AgentState) -> dict:
                 AIMessage(content=item["content"]) if item["role"] == "assistant" else HumanMessage(content=item["content"])
                 for item in state.get("history", [])[-12:]
             ]
-            plan = QueryPlan.model_validate(state["plan"])
             if plan.operation == "refuse":
                 return {"final_answer": fallback, "execution_trace": [trace("generate_response", "生成回答", "已按安全边界返回替代建议")]}
             if plan.operation == "chat":
@@ -408,6 +596,7 @@ async def generate_response(state: AgentState) -> dict:
         response_reset = True
     return {
         "final_answer": answer,
+        "suggestions": _suggested_questions(state),
         "response_reset": response_reset,
         "execution_trace": [trace("generate_response", "生成回答", "已根据可验证数据与资料形成回答")],
     }

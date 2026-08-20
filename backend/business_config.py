@@ -1,10 +1,10 @@
 """Domain configuration: replace this module first when adapting a competition topic."""
 
 BUSINESS_CONFIG = {
-    "app_name": "社会治理智能分析平台",
-    "agent_name": "社会治理分析助手",
+    "app_name": "基层治理协同处置平台",
+    "agent_name": "基层治理协同智能体",
     "domain": "social_governance",
-    "description": "面向街道、社区与城市治理工作人员的事件分析 Demo",
+    "description": "面向街道、社区与协同单位的治理事件研判、派单、复核与办结 Demo",
     "entity_name": "治理事件",
     "knowledge_directory": "knowledge",
     "categories": [

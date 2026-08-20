@@ -21,6 +21,11 @@ def test_health_dashboard_and_cases():
         assert keyword_result["count"] == 1
         assert keyword_result["items"][0]["id"] == case_id
 
+        recommendation = client.get("/api/cases/SG-DEMO-0001/collaboration-recommendation")
+        assert recommendation.status_code == 200
+        assert recommendation.json()["recommended_primary_unit"] == "设施维护模拟组"
+        assert recommendation.json()["requires_human_confirmation"] is True
+
 
 def _sse_events(response_text: str) -> list[dict]:
     return [json.loads(line[6:]) for line in response_text.splitlines() if line.startswith("data: ")]
@@ -95,3 +100,22 @@ def test_partial_model_stream_can_be_replaced_by_grounded_fallback(monkeypatch):
         {"content": "不完整", "delta": True},
         {"content": "可靠兜底回答", "reset": True},
     ]
+
+
+def test_unmatched_response_streams_clickable_suggestions(monkeypatch):
+    recommendations = ["最近7天各区域事件数量是多少？", "目前有哪些高风险待处理事件？"]
+
+    class SuggestingGraph:
+        async def astream(self, *_args, **_kwargs):
+            yield "updates", {"parse_request": {"plan": {"operation": "chat"}, "execution_trace": []}}
+            yield "updates", {"generate_response": {
+                "final_answer": "这个问题不在当前治理分析范围内。",
+                "suggestions": recommendations,
+                "execution_trace": [],
+            }}
+
+    monkeypatch.setattr("api.agent.agent_graph", SuggestingGraph())
+    with TestClient(app) as client:
+        response = client.post("/api/agent/stream", json={"message": "明天天气怎么样？"})
+    events = _sse_events(response.text)
+    assert next(item["data"] for item in events if item["type"] == "suggestions") == recommendations

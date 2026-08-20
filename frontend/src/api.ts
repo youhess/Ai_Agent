@@ -1,6 +1,7 @@
 import type {
-  AgentConfig, AgentRunDetail, AgentRunsPage, DashboardSummary, DataPage, DataSummary,
+  AgentConfig, AgentRunDetail, AgentRunsPage, CollaborationRecommendation, DashboardSummary, DataPage, DataSummary,
   GovernanceCase, ImportPreview, KnowledgeDocument, KnowledgeList, SourceItem, StreamEvent, TraceItem,
+  WorkflowActionPayload,
 } from './types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -9,6 +10,9 @@ export interface HealthStatus {
   status: string
   competition_mode: boolean
   llm_configured: boolean
+  rag_provider_mode: 'auto' | 'local' | 'xingchen'
+  xingchen_rag_configured: boolean
+  rag_last_provider?: 'xingchen' | 'local' | 'local_fallback' | null
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -52,6 +56,22 @@ export async function getCases(filters: Record<string, string | number | undefin
   if (Array.isArray(payload.records)) return payload.records
   if (Array.isArray(payload.data)) return payload.data
   return payload.data?.items ?? []
+}
+
+export function getCaseDetail(caseId: string | number): Promise<GovernanceCase> {
+  return request<GovernanceCase>(`/api/cases/${encodeURIComponent(String(caseId))}`)
+}
+
+export function getCaseCollaborationRecommendation(caseId: string | number): Promise<CollaborationRecommendation> {
+  return request<CollaborationRecommendation>(`/api/cases/${encodeURIComponent(String(caseId))}/collaboration-recommendation`)
+}
+
+export function executeCaseWorkflow(caseId: string | number, payload: WorkflowActionPayload): Promise<{ success: true; action: string; case: GovernanceCase }> {
+  return request(`/api/cases/${encodeURIComponent(String(caseId))}/workflow`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 function parseEventBlock(block: string): StreamEvent | null {

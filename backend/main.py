@@ -9,6 +9,7 @@ from api import admin_agent, admin_data, admin_knowledge, agent, cases, dashboar
 from business_config import BUSINESS_CONFIG
 from config import get_settings
 from database.init_db import init_database
+from rag.retriever import retrieval_status
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 settings = get_settings()
@@ -39,7 +40,14 @@ app.include_router(admin_agent.router)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "competition_mode": settings.competition_mode, "llm_configured": bool(settings.llm_api_key)}
+    rag_status = retrieval_status()
+    return {
+        "status": "ok", "competition_mode": settings.competition_mode,
+        "llm_configured": bool(settings.llm_api_key),
+        "rag_provider_mode": rag_status["provider_mode"],
+        "xingchen_rag_configured": rag_status["xingchen_configured"],
+        "rag_last_provider": rag_status["last_provider"],
+    }
 
 
 @app.exception_handler(Exception)

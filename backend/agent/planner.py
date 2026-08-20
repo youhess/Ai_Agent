@@ -11,12 +11,13 @@ from pydantic import BaseModel, Field, field_validator
 from agent.model import get_chat_model
 
 
-Intent = Literal["general_chat", "knowledge_query", "data_query", "analysis_query", "unsafe"]
+Intent = Literal["general_chat", "knowledge_query", "data_query", "analysis_query", "action_query", "unsafe"]
 Operation = Literal[
     "chat", "list_cases", "case_detail", "aggregate", "compare_periods",
-    "recurring_locations", "knowledge", "comprehensive", "refuse",
+    "recurring_locations", "knowledge", "comprehensive", "workflow", "refuse",
 ]
 GroupBy = Literal["district", "street", "category", "status", "level", "priority", "date"]
+WorkflowAction = Literal["dispatch", "submit_result", "return_for_rework", "approve_close"]
 
 
 class QueryFilters(BaseModel):
@@ -46,6 +47,12 @@ class QueryPlan(BaseModel):
     group_by: GroupBy | None = None
     limit: int = Field(default=20, ge=1, le=100)
     needs_knowledge: bool = False
+    workflow_action: WorkflowAction | None = None
+    responsible_unit: str | None = Field(default=None, max_length=40)
+    collaborator_units: list[str] = Field(default_factory=list, max_length=8)
+    evidence_complete: bool | None = None
+    workflow_note: str | None = Field(default=None, max_length=300)
+    confirmed: bool = False
     comparison_start_date: str | None = None
     comparison_end_date: str | None = None
     safety_reason: str | None = Field(default=None, max_length=200)
@@ -61,6 +68,11 @@ class QueryPlan(BaseModel):
 DISTRICTS = ["滨江区", "上城区", "拱墅区", "西湖区"]
 STREETS = ["长河街道", "西兴街道", "浦沿街道", "湖滨街道", "望江街道", "四季青街道", "武林街道", "祥符街道", "半山街道", "翠苑街道", "古荡街道", "留下街道"]
 CATEGORIES = ["市容环境", "垃圾堆放", "道路设施", "噪声扰民", "占道经营", "停车问题", "公共设施损坏", "社区服务"]
+GOVERNANCE_UNITS = [
+    "市容管理模拟组", "环卫处置模拟组", "道路养护模拟组", "综合协调模拟组",
+    "交通协调模拟组", "设施维护模拟组", "社区服务模拟组", "社区网格模拟组",
+    "物业协同模拟组",
+]
 CATEGORY_ALIASES = {
     "市容事件": "市容环境", "市容问题": "市容环境", "暴露垃圾": "垃圾堆放",
     "井盖": "公共设施损坏", "小广告": "市容环境", "乱贴小广告": "市容环境",
@@ -69,8 +81,8 @@ CATEGORY_ALIASES = {
 
 PLANNER_PROMPT = """你是治理数据查询规划器。请根据用户本轮问题和必要的对话历史输出一个 JSON 对象，不要输出解释。
 字段：intent、operation、filters、case_id、group_by、limit、needs_knowledge、comparison_start_date、comparison_end_date。
-intent 只能是 general_chat、knowledge_query、data_query、analysis_query、unsafe。
-operation 只能是 chat、list_cases、case_detail、aggregate、compare_periods、recurring_locations、knowledge、comprehensive、refuse。
+intent 只能是 general_chat、knowledge_query、data_query、analysis_query、action_query、unsafe。
+operation 只能是 chat、list_cases、case_detail、aggregate、compare_periods、recurring_locations、knowledge、comprehensive、workflow、refuse。
 filters 可包含 district、street、category、statuses、level、priority、days、start_date、end_date。状态只能是待处理、处理中、已完成；level 只能是一级、二级、三级。
 group_by 只能是 district、street、category、status、level、priority、date 或 null。
 日期必须使用 ISO 8601。涉及数据但缺少可选筛选条件时不要臆造。问候和闲聊用 chat。危险操作、批量隐私披露、伪造法规文号或越权处罚用 refuse。"""
@@ -221,6 +233,49 @@ def _previous_user_query(history: list[dict[str, str]]) -> str | None:
     return None
 
 
+def _workflow_request(query: str, case_id: str | None) -> dict[str, Any] | None:
+    if not case_id:
+        return None
+    action: WorkflowAction | None = None
+    if any(word in query for word in ["退回补充", "退回整改", "退回重办", "复核退回"]):
+        action = "return_for_rework"
+    elif any(word in query for word in ["复核办结", "确认办结", "批准办结", "办结归档"]):
+        action = "approve_close"
+    elif any(word in query for word in ["提交处置结果", "提交处理结果", "上传处置证据", "提交现场反馈"]):
+        action = "submit_result"
+    elif (
+        any(word in query for word in ["确认协同派单", "执行协同派单", "确认派单", "执行派单", "分派至", "派给"])
+        or ("协同派单" in query and not any(word in query for word in ["建议", "方案", "分析", "研判", "如何"]))
+    ):
+        action = "dispatch"
+    if action is None:
+        return None
+
+    primary_text = query.split("协办", 1)[0]
+    primary_unit = next((unit for unit in GOVERNANCE_UNITS if unit in primary_text), None)
+    collaborators: list[str] = []
+    if "协办" in query:
+        collaborator_text = query.split("协办", 1)[1]
+        collaborators = [unit for unit in GOVERNANCE_UNITS if unit in collaborator_text and unit != primary_unit]
+    evidence_complete: bool | None = None
+    if any(word in query for word in ["证据完整", "证据齐全", "材料完整", "材料齐全"]):
+        evidence_complete = True
+    elif any(word in query for word in ["证据不足", "证据不全", "材料待补充", "证据待补充"]):
+        evidence_complete = False
+    note_match = re.search(r"(?:备注|说明)[：:]\s*(.{1,300})$", query)
+    return {
+        "workflow_action": action,
+        "responsible_unit": primary_unit,
+        "collaborator_units": collaborators,
+        "evidence_complete": evidence_complete,
+        "workflow_note": note_match.group(1).strip() if note_match else None,
+        "confirmed": (
+            any(word in query for word in ["确认", "执行", "立即", "马上"])
+            and not any(word in query for word in ["不要", "暂不", "先不", "不确认", "取消"])
+        ),
+    }
+
+
 def build_deterministic_plan(query: str, history: list[dict[str, str]] | None = None, today: date | None = None) -> QueryPlan:
     history = history or []
     reason = _unsafe_reason(query)
@@ -229,7 +284,8 @@ def build_deterministic_plan(query: str, history: list[dict[str, str]] | None = 
     filters, comparison = parse_filters(query, today)
     case_match = re.search(r"\b(?:SG|DEMO)-[A-Z0-9-]{4,}\b", query, re.IGNORECASE)
     case_id = case_match.group(0).upper() if case_match else None
-    knowledge_words = ["规范", "规定", "指南", "如何处置", "如何处理", "怎么处理", "流程", "分级规则", "办结要求", "证据", "如何判断", "冲突", "知识库", "条款", "Demo知识", "处置建议"]
+    workflow = _workflow_request(query, case_id)
+    knowledge_words = ["规范", "规定", "指南", "如何处置", "如何处理", "怎么处理", "流程", "分级规则", "办结要求", "证据", "如何判断", "冲突", "知识库", "条款", "Demo知识", "处置建议", "派单建议", "派单方案", "协同方案", "主办单位", "协办单位"]
     data_action_words = ["查询", "统计", "列出", "找出", "汇总", "对比", "趋势", "增长", "分布", "排名", "事件量", "数量"]
     aggregate_words = ["统计", "多少", "占比", "分布", "排名", "最多", "汇总", "增长最快"]
     data_words = [*data_action_words, "高风险", "待处理", "完成率", "点位"]
@@ -238,7 +294,9 @@ def build_deterministic_plan(query: str, history: list[dict[str, str]] | None = 
     wants_data = any(word in query for word in data_words) or case_id is not None
     wants_analysis = any(word in query for word in analysis_words)
     group_by = _group_by(query)
-    if case_id:
+    if workflow:
+        operation: Operation = "workflow"
+    elif case_id:
         operation: Operation = "case_detail"
     elif any(word in query for word in ["反复", "重复发生", "至少三次", "频繁点位"]):
         operation = "recurring_locations"
@@ -270,6 +328,8 @@ def build_deterministic_plan(query: str, history: list[dict[str, str]] | None = 
     intent: Intent
     if operation == "chat":
         intent = "general_chat"
+    elif operation == "workflow":
+        intent = "action_query"
     elif operation == "knowledge":
         intent = "knowledge_query"
     elif operation in {"comprehensive", "compare_periods", "recurring_locations"} or wants_analysis:
@@ -292,6 +352,12 @@ def build_deterministic_plan(query: str, history: list[dict[str, str]] | None = 
         group_by=group_by,
         limit=limit,
         needs_knowledge=wants_knowledge,
+        workflow_action=workflow.get("workflow_action") if workflow else None,
+        responsible_unit=workflow.get("responsible_unit") if workflow else None,
+        collaborator_units=workflow.get("collaborator_units", []) if workflow else [],
+        evidence_complete=workflow.get("evidence_complete") if workflow else None,
+        workflow_note=workflow.get("workflow_note") if workflow else None,
+        confirmed=bool(workflow and workflow.get("confirmed")),
         comparison_start_date=comparison.get("start_date"),
         comparison_end_date=comparison.get("end_date"),
     )
@@ -322,7 +388,7 @@ async def plan_query(query: str, history: list[dict[str, str]] | None = None) ->
         model = get_chat_model()
     except Exception:
         return deterministic
-    if model is None or deterministic.operation in {"chat", "refuse"}:
+    if model is None or deterministic.operation in {"chat", "workflow", "refuse"}:
         return deterministic
     context = {"history": history[-6:], "question": query, "today": date.today().isoformat(), "deterministic_draft": deterministic.model_dump()}
     try:

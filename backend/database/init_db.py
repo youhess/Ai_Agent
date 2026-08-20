@@ -12,8 +12,10 @@ CREATE TABLE IF NOT EXISTS cases (
     priority TEXT NOT NULL CHECK (priority IN ('低', '中', '高')),
     status TEXT NOT NULL CHECK (status IN ('待处理', '处理中', '已完成')),
     responsible_unit TEXT NOT NULL,
+    collaborator_units TEXT NOT NULL DEFAULT '[]',
     evidence_complete INTEGER NOT NULL DEFAULT 0 CHECK (evidence_complete IN (0, 1)),
     created_at TEXT NOT NULL,
+    updated_at TEXT,
     resolved_at TEXT,
     source TEXT NOT NULL
 );
@@ -102,8 +104,12 @@ def init_database() -> None:
             connection.execute("ALTER TABLE cases ADD COLUMN level TEXT NOT NULL DEFAULT '三级'")
         if "responsible_unit" not in columns:
             connection.execute("ALTER TABLE cases ADD COLUMN responsible_unit TEXT NOT NULL DEFAULT '待分派单位'")
+        if "collaborator_units" not in columns:
+            connection.execute("ALTER TABLE cases ADD COLUMN collaborator_units TEXT NOT NULL DEFAULT '[]'")
         if "evidence_complete" not in columns:
             connection.execute("ALTER TABLE cases ADD COLUMN evidence_complete INTEGER NOT NULL DEFAULT 0")
+        if "updated_at" not in columns:
+            connection.execute("ALTER TABLE cases ADD COLUMN updated_at TEXT")
 
 
 if __name__ == "__main__":

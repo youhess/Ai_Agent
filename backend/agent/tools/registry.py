@@ -8,7 +8,7 @@ from agent.tools.analytics_tools import (
     get_case_statistics,
     get_high_risk_cases,
 )
-from agent.tools.case_tools import get_case_detail, query_cases
+from agent.tools.case_tools import advance_case_workflow, get_case_detail, query_cases, recommend_case_collaboration
 from agent.tools.knowledge_tools import search_knowledge_base
 
 
@@ -23,7 +23,7 @@ def register_tools(tools: list[BaseTool]) -> None:
 register_tools([
     query_cases, get_case_statistics, analyse_case_trend, get_high_risk_cases,
     aggregate_cases, compare_case_periods, find_recurring_locations,
-    get_case_detail, search_knowledge_base,
+    get_case_detail, recommend_case_collaboration, advance_case_workflow, search_knowledge_base,
 ])
 
 

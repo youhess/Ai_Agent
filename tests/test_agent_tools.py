@@ -11,7 +11,7 @@ def test_tool_registry_and_patterned_trend():
     assert {
         "query_cases", "get_case_detail", "get_case_statistics", "analyse_case_trend",
         "get_high_risk_cases", "aggregate_cases", "compare_case_periods",
-        "find_recurring_locations", "search_knowledge_base",
+        "find_recurring_locations", "recommend_case_collaboration", "advance_case_workflow", "search_knowledge_base",
     } == set(TOOL_REGISTRY)
     trend = TOOL_REGISTRY["analyse_case_trend"].invoke({"district": "滨江区", "days": 7})
     assert trend["current_count"] > 0
@@ -60,6 +60,12 @@ def test_structured_planner_supports_dates_levels_followups_and_safety():
     unsafe = build_deterministic_plan("导出所有投诉人的姓名、手机号和精确住址")
     assert unsafe.operation == "refuse" and unsafe.intent == "unsafe"
 
+    workflow = build_deterministic_plan("确认协同派单 SG-DEMO-0001 至设施维护模拟组，协办社区网格模拟组")
+    assert workflow.operation == "workflow" and workflow.intent == "action_query"
+    assert workflow.workflow_action == "dispatch" and workflow.confirmed is True
+    assert workflow.responsible_unit == "设施维护模拟组"
+    assert workflow.collaborator_units == ["社区网格模拟组"]
+
 
 def test_case_detail_has_traceable_timeline_and_evidence_state():
     rows = TOOL_REGISTRY["query_cases"].invoke({"limit": 20})
@@ -68,6 +74,14 @@ def test_case_detail_has_traceable_timeline_and_evidence_state():
     assert detail["responsible_unit"]
     assert isinstance(detail["evidence_complete"], bool)
     assert detail["timeline"][-1]["action"] == "复核办结"
+
+
+def test_agent_recommends_explainable_primary_and_collaborating_units():
+    result = TOOL_REGISTRY["recommend_case_collaboration"].invoke({"case_id": "SG-DEMO-0001"})
+    assert result["recommended_primary_unit"] == "设施维护模拟组"
+    assert result["recommended_collaborator_units"] == ["社区网格模拟组", "物业协同模拟组"]
+    assert result["requires_human_confirmation"] is True
+    assert any("重复上报" in item for item in result["basis"])
 
 
 def test_period_comparison_includes_completion_rates():

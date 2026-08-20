@@ -35,6 +35,38 @@ export interface GovernanceCase {
   street?: string
   priority?: string
   source?: string
+  level?: string
+  responsible_unit?: string
+  collaborator_units?: string[]
+  evidence_complete?: boolean
+  updated_at?: string
+  resolved_at?: string | null
+  timeline?: Array<{
+    action: string
+    operator_role: string
+    occurred_at: string
+    note: string
+  }>
+}
+
+export type WorkflowAction = 'dispatch' | 'submit_result' | 'return_for_rework' | 'approve_close'
+
+export interface WorkflowActionPayload {
+  action: WorkflowAction
+  responsible_unit?: string
+  collaborator_units?: string[]
+  evidence_complete?: boolean
+  note?: string
+}
+
+export interface CollaborationRecommendation {
+  case_id: string
+  current_status: string
+  recommended_primary_unit: string
+  recommended_collaborator_units: string[]
+  basis: string[]
+  requires_human_confirmation: boolean
+  recommended_action: string
 }
 
 export interface TraceItem {
@@ -58,11 +90,12 @@ export interface ChatMessage {
   traces?: TraceItem[]
   traceExpanded?: boolean
   sources?: SourceItem[]
+  suggestions?: string[]
   error?: boolean
 }
 
 export interface StreamEvent {
-  type: 'run' | 'trace' | 'source' | 'answer' | 'error' | 'done' | string
+  type: 'run' | 'trace' | 'source' | 'answer' | 'suggestions' | 'error' | 'done' | string
   data: unknown
 }
 
@@ -127,6 +160,13 @@ export interface AgentConfig {
   llm_configured: boolean
   embedding_configured: boolean
   retrieval_mode: 'hybrid' | 'lexical'
+  rag_provider_mode: 'auto' | 'local' | 'xingchen'
+  xingchen_rag_configured: boolean
+  rag_fallback_enabled: boolean
+  rag_last_provider?: 'xingchen' | 'local' | 'local_fallback' | null
+  rag_last_error?: string | null
+  rag_last_latency_ms?: number | null
+  rag_fallback_count: number
   tools: Array<{ name: string; description: string }>
   editable: false
 }

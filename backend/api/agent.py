@@ -90,6 +90,8 @@ async def stream_agent(request: AgentRequest):
                                 "content": node_update["final_answer"],
                                 "reset": bool(streamed_answer and node_update.get("response_reset")),
                             })
+                    if node_update.get("suggestions"):
+                        yield event("suggestions", node_update["suggestions"])
                 await asyncio.sleep(0)
             duration_ms = round((time.perf_counter() - started) * 1000)
             finish_agent_run(

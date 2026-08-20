@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     embedding_base_url: str = ""
     embedding_timeout: int = 30
     rag_min_score: float = 0.04
+    rag_provider: str = "auto"
+    xingchen_rag_api_url: str = ""
+    xingchen_rag_api_key: str = ""
+    xingchen_rag_timeout: int = 20
+    xingchen_rag_request_style: str = "workflow"
+    xingchen_rag_query_field: str = "query"
+    xingchen_rag_context_field: str = "case_context"
+    xingchen_rag_user_id: str = "governance-demo"
+    xingchen_rag_max_query_chars: int = 200
     frontend_origin: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(

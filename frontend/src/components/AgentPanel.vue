@@ -56,7 +56,8 @@ async function send(text?: string) {
   const assistant: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: '', traces: [], traceExpanded: false, sources: [] }
   messages.value.push(userMessage, assistant)
   streaming.value = true
-  controller = new AbortController()
+  const requestController = new AbortController()
+  controller = requestController
   await scrollBottom()
 
   const onEvent = (event: StreamEvent) => {
@@ -75,6 +76,9 @@ async function send(text?: string) {
       const shouldReset = Boolean(event.data && typeof event.data === 'object' && (event.data as Record<string, unknown>).reset)
       if (shouldReset) assistant.content = answerText(event.data)
       else assistant.content += answerText(event.data)
+    } else if (event.type === 'suggestions') {
+      const items = Array.isArray(event.data) ? event.data : []
+      assistant.suggestions = items.filter((item): item is string => typeof item === 'string').slice(0, 3)
     } else if (event.type === 'error') {
       assistant.error = true
       assistant.content += `\n\n${answerText(event.data) || '智能分析服务返回异常，请稍后重试。'}`
@@ -85,7 +89,7 @@ async function send(text?: string) {
   }
 
   try {
-    await streamAgent(prompt, history, controller.signal, onEvent)
+    await streamAgent(prompt, history, requestController.signal, onEvent)
     if (!assistant.content && !assistant.error) assistant.content = '分析已完成，请结合上方任务执行过程与数据来源查看结果。'
   } catch (error) {
     if ((error as Error).name !== 'AbortError') {
@@ -93,8 +97,10 @@ async function send(text?: string) {
       assistant.content = (error as Error).message || '服务暂时不可用，请稍后重试。'
     }
   } finally {
-    streaming.value = false
-    controller = null
+    if (controller === requestController) {
+      streaming.value = false
+      controller = null
+    }
     await scrollBottom()
   }
 }
@@ -109,6 +115,15 @@ function close() {
   emit('close')
 }
 
+function clearConversation() {
+  if (!messages.value.length || !window.confirm('确认清空当前对话吗？清空后无法恢复。')) return
+  controller?.abort()
+  controller = null
+  streaming.value = false
+  question.value = ''
+  messages.value = []
+}
+
 watch(() => props.open, (open) => { if (open) scrollBottom() })
 </script>
 
@@ -116,8 +131,9 @@ watch(() => props.open, (open) => { if (open) scrollBottom() })
   <Transition name="chat-window">
     <aside v-if="open" class="agent-drawer" :class="{ expanded }" aria-label="AI智能助手会话窗口">
       <header class="agent-header">
-        <div class="agent-identity"><span class="agent-logo"><AppIcon name="bot" /></span><div><h2>{{ BUSINESS.assistant.title }}<b>测试版</b></h2><p>政策查询 · 数据分析 · 处置参考</p></div></div>
+        <div class="agent-identity"><span class="agent-logo"><AppIcon name="bot" /></span><div><h2>{{ BUSINESS.assistant.title }}<b>测试版</b></h2><p>智能研判 · 协同派单 · 证据复核</p></div></div>
         <div class="agent-window-actions">
+          <button v-if="messages.length" class="icon-button" aria-label="清空对话" title="清空对话" @click="clearConversation"><AppIcon name="trash" /></button>
           <button class="icon-button" :aria-label="expanded ? '恢复窗口' : '展开窗口'" @click="expanded = !expanded"><AppIcon :name="expanded ? 'restore' : 'maximize'" /></button>
           <button class="icon-button" aria-label="最小化" @click="close"><AppIcon name="minimize" /></button>
         </div>
@@ -168,6 +184,10 @@ watch(() => props.open, (open) => { if (open) scrollBottom() })
                 <a v-for="(source, index) in message.sources" :key="source.id ?? index" :href="source.url || undefined" :target="source.url ? '_blank' : undefined" rel="noopener noreferrer">
                   <span>{{ index + 1 }}</span><div><strong>{{ source.title }}</strong><p v-if="source.excerpt">{{ source.excerpt }}</p></div>
                 </a>
+              </div>
+              <div v-if="message.suggestions?.length" class="message-suggestions">
+                <p>您可以继续这样查询或操作：</p>
+                <button v-for="item in message.suggestions" :key="item" :disabled="streaming" @click="send(item)">{{ item }}<b>›</b></button>
               </div>
             </div>
           </div>

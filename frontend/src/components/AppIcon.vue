@@ -16,6 +16,7 @@ defineProps<{ name: string }>()
   <svg v-else-if="name === 'minimize'" viewBox="0 0 24 24"><path d="M6 16h12"/></svg>
   <svg v-else-if="name === 'maximize'" viewBox="0 0 24 24"><path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4"/></svg>
   <svg v-else-if="name === 'restore'" viewBox="0 0 24 24"><path d="M8 8h11v11H8zM5 16V5h11"/></svg>
+  <svg v-else-if="name === 'trash'" viewBox="0 0 24 24"><path d="M4 7h16M9 3h6l1 4H8zM7 7l1 14h8l1-14M10 11v6M14 11v6"/></svg>
   <svg v-else-if="name === 'database'" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
   <svg v-else-if="name === 'menu'" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
   <svg v-else-if="name === 'shield'" viewBox="0 0 24 24"><path d="M12 2.5 20 6v5.5c0 5-3.3 8.5-8 10-4.7-1.5-8-5-8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>

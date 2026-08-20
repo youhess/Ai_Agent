@@ -35,6 +35,12 @@ RESPONSIBLE_UNITS = {
     "噪声扰民": "综合协调模拟组", "占道经营": "市容管理模拟组", "停车问题": "交通协调模拟组",
     "公共设施损坏": "设施维护模拟组", "社区服务": "社区服务模拟组",
 }
+COLLABORATOR_UNITS = {
+    "市容环境": ["社区网格模拟组"], "垃圾堆放": ["社区网格模拟组"],
+    "道路设施": ["社区网格模拟组", "物业协同模拟组"], "噪声扰民": ["社区网格模拟组"],
+    "占道经营": ["社区网格模拟组"], "停车问题": ["社区网格模拟组"],
+    "公共设施损坏": ["社区网格模拟组", "物业协同模拟组"], "社区服务": [],
+}
 
 
 def generate(count: int = 240, seed: int = 2026) -> list[dict]:
@@ -106,6 +112,7 @@ def generate(count: int = 240, seed: int = 2026) -> list[dict]:
             "level": {"高": "一级", "中": "二级", "低": "三级"}[priority], "priority": priority,
             "status": status, "created_at": created.isoformat(timespec="seconds"),
             "responsible_unit": RESPONSIBLE_UNITS[category], "evidence_complete": int(evidence_complete),
+            "collaborator_units": COLLABORATOR_UNITS[category] if priority == "高" else [],
             "resolved_at": resolved, "source": random.choice(["12345热线", "网格巡查", "居民上报", "物联感知"]),
             "timeline": timeline,
         })
@@ -126,6 +133,26 @@ def generate(count: int = 240, seed: int = 2026) -> list[dict]:
         for action in row["timeline"]:
             if action["action"] == "派单签收":
                 action["note"] = f"已分派至{RESPONSIBLE_UNITS['噪声扰民']}"
+    # Stable hero case for the end-to-end collaboration demo.
+    hero = rows[0]
+    reported_at = (now - timedelta(minutes=50)).isoformat(timespec="seconds")
+    hero.update({
+        "id": "SG-DEMO-0001", "category": "公共设施损坏", "district": "滨江区", "street": "长河街道",
+        "description": "小区主出入口井盖破损伴随积水，居民连续上报，影响通行安全",
+        "level": "一级", "priority": "高", "status": "待处理",
+        "responsible_unit": "待分派单位", "collaborator_units": [],
+        "evidence_complete": 0, "created_at": reported_at, "resolved_at": None, "source": "居民上报",
+        "timeline": [
+            {
+                "action": "受理登记", "operator_role": "受理员", "occurred_at": reported_at,
+                "note": "完成脱敏登记，等待智能分级与协同派单",
+            },
+            {
+                "action": "重复核验", "operator_role": "基层治理协同智能体", "occurred_at": reported_at,
+                "note": "发现同类问题连续上报，已标记为需优先研判的协同治理事项",
+            },
+        ],
+    })
     return rows
 
 

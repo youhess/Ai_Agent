@@ -11,6 +11,10 @@ os.environ["DATABASE_PATH"] = "backend/data/test.db"
 os.environ["KNOWLEDGE_DIRECTORY"] = "knowledge"
 # Unit tests must never call the developer's configured external model.
 os.environ["LLM_API_KEY"] = ""
+# Unit tests must never call a developer's configured external RAG workflow.
+os.environ["RAG_PROVIDER"] = "local"
+os.environ["XINGCHEN_RAG_API_URL"] = ""
+os.environ["XINGCHEN_RAG_API_KEY"] = ""
 
 
 @pytest.fixture(scope="session", autouse=True)

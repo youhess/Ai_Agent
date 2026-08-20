@@ -27,7 +27,7 @@ onMounted(async () => {
     <template v-if="config">
       <section class="agent-profile-card">
         <span class="agent-profile-icon"><AppIcon name="bot" /></span>
-        <div><small>当前分析助手</small><h2>{{ config.agent_name }}</h2><p>用于社会治理事件查询、趋势研判、风险识别和政策资料辅助</p></div>
+        <div><small>当前协同智能体</small><h2>{{ config.agent_name }}</h2><p>用于基层治理事件研判、主协办派单、证据复核和闭环办结</p></div>
         <span class="studio-status indexed">运行配置已加载</span>
       </section>
 
@@ -35,8 +35,9 @@ onMounted(async () => {
         <article class="studio-panel config-card"><div class="config-card-title"><AppIcon name="spark" /><div><h2>模型服务</h2><p>回答生成与自然语言理解</p></div></div>
           <dl><div><dt>Provider</dt><dd>{{ config.provider }}</dd></div><div><dt>模型</dt><dd>{{ config.model }}</dd></div><div><dt>Temperature</dt><dd>{{ config.temperature }}</dd></div><div><dt>服务状态</dt><dd><span class="studio-status" :class="config.llm_configured ? 'indexed' : 'pending'">{{ config.llm_configured ? '密钥已配置' : '本地兜底模式' }}</span></dd></div></dl>
         </article>
-        <article class="studio-panel config-card"><div class="config-card-title"><AppIcon name="document" /><div><h2>知识检索</h2><p>资料召回与回答溯源</p></div></div>
-          <dl><div><dt>检索模式</dt><dd>{{ config.retrieval_mode === 'hybrid' ? '混合检索' : '关键词兜底' }}</dd></div><div><dt>Embedding</dt><dd><span class="studio-status" :class="config.embedding_configured ? 'indexed' : 'pending'">{{ config.embedding_configured ? '服务已配置' : '未配置' }}</span></dd></div><div><dt>语义权重</dt><dd>{{ config.retrieval_mode === 'hybrid' ? '70%' : '-' }}</dd></div><div><dt>关键词权重</dt><dd>{{ config.retrieval_mode === 'hybrid' ? '30%' : '100%' }}</dd></div></dl>
+        <article class="studio-panel config-card"><div class="config-card-title"><AppIcon name="document" /><div><h2>知识检索</h2><p>星辰向量 RAG 优先，本地索引自动回退</p></div></div>
+          <dl><div><dt>检索路由</dt><dd>{{ config.rag_provider_mode === 'local' ? '仅本地' : config.rag_provider_mode === 'xingchen' ? '星辰优先' : '自动选择' }}</dd></div><div><dt>星辰 RAG</dt><dd><span class="studio-status" :class="config.xingchen_rag_configured ? 'indexed' : 'pending'">{{ config.xingchen_rag_configured ? 'API 已配置' : '待配置' }}</span></dd></div><div><dt>本地回退</dt><dd><span class="studio-status indexed">{{ config.retrieval_mode === 'hybrid' ? '混合索引就绪' : '关键词索引就绪' }}</span></dd></div><div><dt>最近调用</dt><dd>{{ config.rag_last_provider === 'xingchen' ? `星辰 · ${config.rag_last_latency_ms ?? '-'}ms` : config.rag_last_provider === 'local_fallback' ? '已回退本地' : config.rag_last_provider === 'local' ? '本地检索' : '尚未调用' }}</dd></div></dl>
+          <p v-if="config.rag_last_error" class="rag-runtime-note">最近回退原因：{{ config.rag_last_error }}</p>
         </article>
       </section>
 

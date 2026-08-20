@@ -22,7 +22,9 @@ def test_admin_config_is_read_only_and_never_exposes_secrets():
     assert response.status_code == 200
     payload = response.json()
     assert payload["editable"] is False
-    assert len(payload["tools"]) == 9
+    assert len(payload["tools"]) == 11
+    assert any(item["name"] == "recommend_case_collaboration" for item in payload["tools"])
+    assert any(item["name"] == "advance_case_workflow" for item in payload["tools"])
     serialized = json.dumps(payload).lower()
     assert "api_key" not in serialized
     assert "system_prompt" not in serialized

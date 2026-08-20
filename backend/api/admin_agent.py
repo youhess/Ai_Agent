@@ -5,6 +5,7 @@ from business_config import BUSINESS_CONFIG
 from config import get_settings
 from database.admin_repository import get_agent_run, list_agent_runs
 from rag.embeddings import embedding_configured
+from rag.retriever import retrieval_status
 from rag.vector_store import LocalVectorStore
 
 router = APIRouter(prefix="/api/admin", tags=["admin-agent"])
@@ -16,6 +17,7 @@ def agent_config():
     settings = get_settings()
     store = LocalVectorStore()
     store.load()
+    rag_status = retrieval_status()
     return {
         "agent_name": BUSINESS_CONFIG["agent_name"],
         "domain": BUSINESS_CONFIG["domain"],
@@ -25,6 +27,13 @@ def agent_config():
         "llm_configured": bool(settings.llm_api_key),
         "embedding_configured": embedding_configured(),
         "retrieval_mode": store.mode,
+        "rag_provider_mode": rag_status["provider_mode"],
+        "xingchen_rag_configured": rag_status["xingchen_configured"],
+        "rag_fallback_enabled": rag_status["fallback_enabled"],
+        "rag_last_provider": rag_status["last_provider"],
+        "rag_last_error": rag_status["last_error"],
+        "rag_last_latency_ms": rag_status["last_latency_ms"],
+        "rag_fallback_count": rag_status["fallback_count"],
         "tools": [{"name": tool.name, "description": tool.description} for tool in get_tools()],
         "editable": False,
     }
